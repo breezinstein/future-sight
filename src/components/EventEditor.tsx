@@ -1,8 +1,9 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { events as eventsApi } from '@/api';
 import type { Bucket, PlanEvent, EventType } from '@/types';
 import { Modal } from './Modal';
 import { Spinner } from './Spinner';
+import { CurrencyInput } from './CurrencyInput';
 import { useToast } from '@/context/ToastContext';
 import { todayIso } from '@/lib/format';
 
@@ -44,20 +45,36 @@ export function EventEditor({ scenarioId, buckets, event, onClose, onSaved }: Pr
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Recurring is only meaningful for deposit/withdrawal. Clear it when the
+  // user switches type so a stale checkbox state can't slip into the payload.
+  useEffect(() => {
+    if (type !== 'deposit' && type !== 'withdrawal') {
+      setRecurring(false);
+      setEscalationRate('');
+    }
+  }, [type]);
+
+  // Show the selected bucket's currency on the amount input so it's obvious
+  // that the value is in that currency, not the plan's base.
+  const selectedBucketCurrency = bucketId === ''
+    ? undefined
+    : buckets.find((b) => b.id === Number(bucketId))?.currency;
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
+      const isAmountEvent = type === 'deposit' || type === 'withdrawal';
       const payload: Record<string, unknown> = {
         type, date,
         bucketId: bucketId === '' ? null : Number(bucketId),
         amount: type === 'rate_change' ? null : amount === '' ? null : Number(amount),
         newRate: type === 'rate_change' ? (newRate === '' ? null : Number(newRate) / 100) : null,
-        recurring,
-        cadence: recurring ? cadence : null,
-        endDate: recurring && endDate ? endDate : null,
-        escalationRate: recurring && escalationRate !== '' && (type === 'deposit' || type === 'withdrawal')
+        recurring: isAmountEvent ? recurring : false,
+        cadence: isAmountEvent && recurring ? cadence : null,
+        endDate: isAmountEvent && recurring && endDate ? endDate : null,
+        escalationRate: isAmountEvent && recurring && escalationRate !== ''
           ? Number(escalationRate) / 100
           : null,
         enabled,
@@ -138,50 +155,63 @@ export function EventEditor({ scenarioId, buckets, event, onClose, onSaved }: Pr
               <label className="fs-label" htmlFor="event-amount">
                 Amount {type === 'withdrawal' ? '(deducted)' : type === 'contribution_change' ? '(new monthly amount)' : ''}
               </label>
-              <input id="event-amount" type="number" step="0.01" className="fs-input mt-1 tabular" value={amount} onChange={(e) => setAmount(e.target.value === '' ? '' : Number(e.target.value))} required />
+              <CurrencyInput
+                id="event-amount"
+                className="fs-input mt-1"
+                value={amount}
+                onChange={setAmount}
+                placeholder="e.g. 5,000"
+                currencyHint={selectedBucketCurrency}
+                required
+              />
             </div>
           )}
 
-          <div className="col-span-2 flex flex-col gap-3">
-            <div className="flex items-center gap-3">
-              <label className="inline-flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} className="accent-inverse-primary" />
-                <span className="text-sm text-on-surface">Recurring</span>
-              </label>
+          {/* Recurring is only meaningful for amount-based events (deposit/withdrawal).
+              rate_change and contribution_change are sticky "from this date forward"
+              changes — they don't repeat. */}
+          {(type === 'deposit' || type === 'withdrawal') && (
+            <div className="col-span-2 flex flex-col gap-3">
+              <div className="flex items-center gap-3">
+                <label className="inline-flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} className="accent-inverse-primary" />
+                  <span className="text-sm text-on-surface">Recurring</span>
+                </label>
+                {recurring && (
+                  <>
+                    <select className="fs-input flex-1" value={cadence} onChange={(e) => setCadence(e.target.value as 'monthly' | 'quarterly' | 'annual')}>
+                      <option value="monthly">Monthly</option>
+                      <option value="quarterly">Quarterly</option>
+                      <option value="annual">Annual</option>
+                    </select>
+                    <input type="date" className="fs-input flex-1" placeholder="End date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                  </>
+                )}
+              </div>
+
               {recurring && (
-                <>
-                  <select className="fs-input flex-1" value={cadence} onChange={(e) => setCadence(e.target.value as 'monthly' | 'quarterly' | 'annual')}>
-                    <option value="monthly">Monthly</option>
-                    <option value="quarterly">Quarterly</option>
-                    <option value="annual">Annual</option>
-                  </select>
-                  <input type="date" className="fs-input flex-1" placeholder="End date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-                </>
+                <div>
+                  <label className="fs-label" htmlFor="escalation">
+                    Annual escalation % <span className="text-on-surface-variant normal-case tracking-normal">(optional)</span>
+                  </label>
+                  <input
+                    id="escalation"
+                    type="number"
+                    step="0.1"
+                    className="fs-input mt-1 tabular"
+                    placeholder="e.g. 3 to index withdrawals to inflation"
+                    value={escalationRate}
+                    onChange={(e) => setEscalationRate(e.target.value === '' ? '' : Number(e.target.value))}
+                  />
+                  <p className="text-xs text-on-surface-variant mt-1">
+                    Each occurrence's amount grows by this annual rate. 3% means a $1,000 withdrawal becomes
+                    $1,030 after a year, $1,061 after two, etc. Works with any cadence (we interpolate fractionally
+                    for monthly/quarterly).
+                  </p>
+                </div>
               )}
             </div>
-
-            {recurring && (type === 'deposit' || type === 'withdrawal') && (
-              <div>
-                <label className="fs-label" htmlFor="escalation">
-                  Annual escalation % <span className="text-on-surface-variant normal-case tracking-normal">(optional)</span>
-                </label>
-                <input
-                  id="escalation"
-                  type="number"
-                  step="0.1"
-                  className="fs-input mt-1 tabular"
-                  placeholder="e.g. 3 to index withdrawals to inflation"
-                  value={escalationRate}
-                  onChange={(e) => setEscalationRate(e.target.value === '' ? '' : Number(e.target.value))}
-                />
-                <p className="text-xs text-on-surface-variant mt-1">
-                  Each occurrence's amount grows by this annual rate. 3% means a $1,000 withdrawal becomes
-                  $1,030 after a year, $1,061 after two, etc. Works with any cadence (we interpolate fractionally
-                  for monthly/quarterly).
-                </p>
-              </div>
-            )}
-          </div>
+          )}
 
           <div className="col-span-2">
             <label className="fs-label" htmlFor="event-notes">Notes (optional)</label>

@@ -228,8 +228,8 @@ export function ScenarioDetail() {
             <span className="fs-label text-on-surface-variant">{buckets.filter((b) => !b.enabled).length > 0 ? `${buckets.filter((b) => !b.enabled).length} excluded` : ''}</span>
           </div>
           {buckets.length === 0 ? (
-            <div className="fs-card p-6 text-center text-sm text-on-surface-variant">
-              No buckets yet. Click <span className="text-primary">+ Bucket</span> to start.
+            <div className="fs-card p-6 text-center text-sm text-on-surface-variant border-dashed">
+              No buckets yet. Use the <span className="text-on-surface font-medium">+ Bucket</span> button above to add one.
             </div>
           ) : buckets.map((b) => (
             <div

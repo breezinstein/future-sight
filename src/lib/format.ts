@@ -73,6 +73,24 @@ export function formatRelativeFromNow(iso: string) {
   return formatDate(iso);
 }
 
+// Priority currencies surface first; everything else is alphabetical.
+// Tweak this list to your audience.
+const PRIORITY_CURRENCIES = ['NGN', 'USD', 'GBP'];
+
+/**
+ * Sort a list of ISO currency codes so that priority codes appear first
+ * (in priority order), followed by the rest alphabetically. The original
+ * list is not mutated.
+ */
+export function sortCurrencies(currencies: string[]): string[] {
+  const set = new Set(currencies);
+  const priority = PRIORITY_CURRENCIES.filter((c) => set.has(c));
+  const rest = currencies
+    .filter((c) => !PRIORITY_CURRENCIES.includes(c))
+    .sort((a, b) => a.localeCompare(b));
+  return [...priority, ...rest];
+}
+
 export function todayIso() {
   const d = new Date();
   return d.toISOString().slice(0, 10);

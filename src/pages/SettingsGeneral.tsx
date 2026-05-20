@@ -3,6 +3,7 @@ import { auth as authApi, plans as plansApi, fx as fxApi } from '@/api';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { Spinner } from '@/components/Spinner';
+import { sortCurrencies } from '@/lib/format';
 
 export function SettingsGeneral() {
   const { state, refreshPlans } = useAuth();
@@ -20,7 +21,7 @@ export function SettingsGeneral() {
   const [savingPwd, setSavingPwd] = useState(false);
 
   useEffect(() => {
-    fxApi.currencies().then(setCurrencies).catch(() => setCurrencies(['USD','EUR','GBP']));
+    fxApi.currencies().then((list) => setCurrencies(sortCurrencies(list))).catch(() => setCurrencies(['NGN','USD','GBP']));
   }, []);
 
   useEffect(() => {

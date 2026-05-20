@@ -32,11 +32,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
+      {/* Toasts sit at the top of the viewport so they don't overlap action
+          buttons that tend to live at the bottom of cards. pointer-events:none
+          on the toast itself (not just the container) means they never block
+          a click on what's underneath. */}
+      <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-2 pointer-events-none w-full max-w-md px-4">
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`fs-fade-in pointer-events-auto px-4 py-3 rounded-lg border min-w-[240px] max-w-md shadow-lg
+            className={`fs-fade-in pointer-events-none px-4 py-2.5 rounded-lg border shadow-lg backdrop-blur-sm bg-opacity-90
               ${variantStyles[t.variant]}`}
           >
             <p className="text-sm">{t.message}</p>

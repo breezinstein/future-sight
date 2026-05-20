@@ -4,6 +4,7 @@ import { plans as plansApi, fx as fxApi } from '@/api';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { Spinner } from '@/components/Spinner';
+import { sortCurrencies } from '@/lib/format';
 
 export function SettingsPlanNew() {
   const { refreshPlans, setActivePlan } = useAuth();
@@ -15,7 +16,7 @@ export function SettingsPlanNew() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    fxApi.currencies().then(setCurrencies).catch(() => setCurrencies(['USD','EUR','GBP']));
+    fxApi.currencies().then((list) => setCurrencies(sortCurrencies(list))).catch(() => setCurrencies(['NGN','USD','GBP']));
   }, []);
 
   async function onSubmit(e: FormEvent) {
