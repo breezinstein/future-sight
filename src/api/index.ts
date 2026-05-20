@@ -53,6 +53,7 @@ export const scenarios = {
   remove: (id: number) => api.del<{ ok: true }>(`/api/scenarios/${id}`),
   clone: (id: number, name: string) =>
     api.post<{ id: number }>(`/api/scenarios/${id}/clone`, { name }),
+  setBase: (id: number) => api.post<{ ok: true }>(`/api/scenarios/${id}/set-base`),
   projection: (id: number) => api.get<ProjectionResponse>(`/api/scenarios/${id}/projection`),
   compare: (planId: number, scenarioIds: number[], horizonYears?: number[]) =>
     api.post<CompareResponse>(`/api/plans/${planId}/compare`, { scenarioIds, horizonYears }),

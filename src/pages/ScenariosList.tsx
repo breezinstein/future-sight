@@ -24,6 +24,16 @@ export function ScenariosList() {
   const [cloneOpen, setCloneOpen] = useState<Scenario | null>(null);
   const [cloneName, setCloneName] = useState('');
 
+  async function reload() {
+    if (!planId) return;
+    const list = await scenariosApi.list(planId);
+    setScenarios(list);
+    const entries = await Promise.all(
+      list.map(async (s) => [s.id, await scenariosApi.projection(s.id)] as const),
+    );
+    setProjections(Object.fromEntries(entries));
+  }
+
   useEffect(() => {
     if (!planId) return;
     let cancelled = false;
@@ -50,11 +60,22 @@ export function ScenariosList() {
   }
 
   async function onDelete(s: Scenario) {
-    if (s.is_base) { show('Cannot delete the base scenario', 'warning'); return; }
+    if (s.is_base) { show('Cannot delete the base scenario. Set another scenario as base first.', 'warning'); return; }
     if (!confirm(`Delete scenario "${s.name}"?`)) return;
     await scenariosApi.remove(s.id);
     setScenarios((xs) => (xs ?? []).filter((x) => x.id !== s.id));
     show(`Deleted "${s.name}"`, 'success');
+  }
+
+  async function onSetBase(s: Scenario) {
+    if (s.is_base) return;
+    try {
+      await scenariosApi.setBase(s.id);
+      show(`"${s.name}" is now the base scenario`, 'success');
+      reload();
+    } catch (err) {
+      show(err instanceof Error ? err.message : 'Failed to set base', 'error');
+    }
   }
 
   async function onClone() {
@@ -77,7 +98,7 @@ export function ScenariosList() {
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-on-surface">Scenarios</h1>
-          <p className="text-sm text-on-surface-variant mt-0.5">Model multiple futures and compare them side by side.</p>
+          <p className="text-sm text-on-surface-variant mt-0.5">Model multiple futures and compare them side by side. The <span className="text-primary">base</span> scenario is what the Dashboard shows by default.</p>
         </div>
         <div className="flex items-center gap-2">
           {compareUrl && (
@@ -148,6 +169,11 @@ export function ScenariosList() {
 
                 <div className="flex items-center gap-1 mt-1 pt-2 border-t border-surface-container">
                   <Link to={`/scenarios/${s.id}`} className="fs-btn fs-btn-ghost flex-1 justify-center text-xs">Open</Link>
+                  {!s.is_base && (
+                    <button type="button" onClick={() => onSetBase(s)} className="fs-btn fs-btn-ghost text-xs" title="Set as base scenario">
+                      <Star size={14} />
+                    </button>
+                  )}
                   <button type="button" onClick={() => { setCloneOpen(s); setCloneName(`${s.name} (copy)`); }} className="fs-btn fs-btn-ghost text-xs" aria-label="Clone">
                     <Copy size={14} />
                   </button>

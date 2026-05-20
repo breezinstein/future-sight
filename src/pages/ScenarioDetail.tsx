@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ChevronLeft, Copy, Plus, Trash2, Edit3, Settings as SettingsIcon } from 'lucide-react';
+import { ChevronLeft, Copy, Plus, Trash2, Edit3, Settings as SettingsIcon, Star } from 'lucide-react';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot,
 } from 'recharts';
@@ -92,6 +92,17 @@ export function ScenarioDetail() {
     reload();
   }
 
+  async function onSetBase() {
+    if (!scenario || scenario.is_base) return;
+    try {
+      await scenariosApi.setBase(scenario.id);
+      show(`"${scenario.name}" is now the base scenario`, 'success');
+      reload();
+    } catch (err) {
+      show(err instanceof Error ? err.message : 'Failed to set base', 'error');
+    }
+  }
+
   async function onClone() {
     if (!cloneName.trim()) return;
     const { id: newId } = await scenariosApi.clone(scenario!.id, cloneName.trim());
@@ -129,6 +140,11 @@ export function ScenarioDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {!scenario.is_base && (
+            <button type="button" onClick={onSetBase} className="fs-btn fs-btn-secondary" title="Use this scenario as the household's default plan">
+              <Star size={14} /> Set as base
+            </button>
+          )}
           <button type="button" onClick={() => setSettingsOpen(true)} className="fs-btn fs-btn-secondary" title="Edit scenario name, start date, horizon">
             <SettingsIcon size={14} /> Settings
           </button>

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { TrendingUp, TrendingDown, ArrowRightLeft, Wallet } from 'lucide-react';
+import { TrendingUp, TrendingDown, Wallet, Star } from 'lucide-react';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, ReferenceDot,
 } from 'recharts';
@@ -14,11 +14,13 @@ import { formatCompactCurrency, formatCurrency, formatDate, formatYearMonth } fr
 
 type ChartPoint = { date: string; ts: number; actual: number | null; projected: number | null };
 
+const dashboardScenarioStorageKey = (planId: number) => `fs.dashboardScenarioId.${planId}`;
+
 export function Dashboard() {
   const { state } = useAuth();
   const [members, setMembers] = useState<PlanMember[]>([]);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
-  const [activeScenario, setActiveScenario] = useState<Scenario | null>(null);
+  const [activeScenarioId, setActiveScenarioId] = useState<number | null>(null);
   const [proj, setProj] = useState<ProjectionResponse | null>(null);
   const [actuals, setActuals] = useState<Record<number, Actual[]>>({});
   const [loading, setLoading] = useState(true);
@@ -26,37 +28,59 @@ export function Dashboard() {
   if (state.status !== 'authenticated') throw new Error('unreachable');
   const planId = state.activePlanId;
 
+  // Load plan + scenarios. Choose active scenario via the saved preference
+  // (per-plan in localStorage) and fall back to the base scenario.
   useEffect(() => {
     if (!planId) return;
     let cancelled = false;
     setLoading(true);
     (async () => {
+      const plan = await plansApi.get(planId);
+      if (cancelled) return;
+      setMembers(plan.members);
+      setScenarios(plan.scenarios);
+      const stored = Number(localStorage.getItem(dashboardScenarioStorageKey(planId)));
+      const chosen =
+        plan.scenarios.find((s) => s.id === stored)
+        ?? plan.scenarios.find((s) => s.is_base)
+        ?? plan.scenarios[0];
+      setActiveScenarioId(chosen?.id ?? null);
+      if (!chosen) setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [planId]);
+
+  // Load projection + actuals whenever the active scenario changes.
+  useEffect(() => {
+    if (!activeScenarioId) return;
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
       try {
-        const plan = await plansApi.get(planId);
+        const p = await scenariosApi.projection(activeScenarioId);
         if (cancelled) return;
-        setMembers(plan.members);
-        setScenarios(plan.scenarios);
-        const base = plan.scenarios.find((s) => s.is_base) ?? plan.scenarios[0];
-        setActiveScenario(base ?? null);
-        if (base) {
-          const p = await scenariosApi.projection(base.id);
-          if (cancelled) return;
-          setProj(p);
-          // Load actuals per bucket (parallel)
-          const entries = await Promise.all(
-            p.projection.buckets.map(async (b) =>
-              [b.bucketId, await bucketsApi.actuals.list(b.bucketId)] as const,
-            ),
-          );
-          if (cancelled) return;
-          setActuals(Object.fromEntries(entries));
-        }
+        setProj(p);
+        const entries = await Promise.all(
+          p.projection.buckets.map(async (b) =>
+            [b.bucketId, await bucketsApi.actuals.list(b.bucketId)] as const,
+          ),
+        );
+        if (cancelled) return;
+        setActuals(Object.fromEntries(entries));
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
+  }, [activeScenarioId]);
+
+  const onPickScenario = useCallback((id: number) => {
+    if (!planId) return;
+    localStorage.setItem(dashboardScenarioStorageKey(planId), String(id));
+    setActiveScenarioId(id);
   }, [planId]);
+
+  const activeScenario = scenarios.find((s) => s.id === activeScenarioId) ?? null;
 
   // Build aggregated actual line by combining all bucket actuals on a
   // unified timeline that includes both projection dates and recorded
@@ -303,14 +327,34 @@ export function Dashboard() {
           />
           <div className="fs-card p-4 sm:col-span-2 @4xl:col-span-1">
             <div className="fs-label mb-2">Active scenario</div>
-            <div className="flex items-center justify-between">
-              <div className="min-w-0">
-                <div className="text-xl font-semibold text-on-surface truncate">{activeScenario.name}</div>
-                <div className="text-xs text-on-surface-variant mt-1">{scenarios.length} scenario{scenarios.length === 1 ? '' : 's'}</div>
+            <div className="flex flex-col gap-2">
+              <div className="relative">
+                <select
+                  className="fs-input pr-9 appearance-none cursor-pointer"
+                  value={activeScenarioId ?? ''}
+                  onChange={(e) => onPickScenario(Number(e.target.value))}
+                >
+                  {scenarios.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}{s.is_base ? ' (base)' : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <Link to="/scenarios" className="text-primary hover:text-primary-fixed-dim" aria-label="Switch scenario">
-                <ArrowRightLeft size={20} />
-              </Link>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-on-surface-variant">
+                  {activeScenario?.is_base ? (
+                    <span className="inline-flex items-center gap-1 text-primary">
+                      <Star size={11} /> This is the household's base plan
+                    </span>
+                  ) : (
+                    <span>Viewing a non-base scenario</span>
+                  )}
+                </span>
+                <Link to={`/scenarios/${activeScenarioId}`} className="text-primary hover:underline tracking-wide uppercase">
+                  Edit
+                </Link>
+              </div>
             </div>
           </div>
         </div>

@@ -154,4 +154,17 @@ router.post('/scenarios/:id/clone', requireScenarioRole('editor'), (req, res) =>
   res.status(201).json({ id: newId });
 });
 
+// POST /api/scenarios/:id/set-base
+// Atomically demote whichever scenario is currently base in this plan,
+// then promote the target. The dashboard's default view follows is_base.
+router.post('/scenarios/:id/set-base', requireScenarioRole('editor'), (req, res) => {
+  const tx = db.transaction(() => {
+    db.prepare('UPDATE scenarios SET is_base = 0 WHERE plan_id = ?').run(req.planId);
+    db.prepare('UPDATE scenarios SET is_base = 1 WHERE id = ?').run(req.scenarioId);
+  });
+  tx();
+  logAudit({ planId: req.planId, userId: req.user.id, action: 'scenario.set_base', entityType: 'scenario', entityId: req.scenarioId });
+  res.json({ ok: true });
+});
+
 export default router;
