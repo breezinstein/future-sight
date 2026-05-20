@@ -12,7 +12,7 @@ import { StatCard } from '@/components/StatCard';
 import { BucketIcon } from '@/components/BucketIcon';
 import { formatCompactCurrency, formatCurrency, formatDate, formatYearMonth } from '@/lib/format';
 
-type ChartPoint = { date: string; ts: number; actual: number | null; projected: number };
+type ChartPoint = { date: string; ts: number; actual: number | null; projected: number | null };
 
 export function Dashboard() {
   const { state } = useAuth();
@@ -58,35 +58,65 @@ export function Dashboard() {
     return () => { cancelled = true; };
   }, [planId]);
 
-  // Build aggregated actual line by summing all bucket actuals on each shared date.
+  // Build aggregated actual line by combining all bucket actuals on a
+  // unified timeline that includes both projection dates and recorded
+  // actual dates. The "actual" value at any date is the running sum of
+  // each bucket's most recent actual at-or-before that date.
   const chartData = useMemo<ChartPoint[]>(() => {
     if (!proj) return [];
+    const projection = proj.projection;
 
-    // Aggregate actuals by date. Only counts dates where we have at least one actual.
-    const allDates = new Set<string>();
-    for (const list of Object.values(actuals)) {
-      for (const a of list) allDates.add(a.date);
+    // 1. Pre-sort actuals per bucket so we can scan forward quickly.
+    const actualsByBucket: Record<number, Actual[]> = {};
+    for (const [k, v] of Object.entries(actuals)) {
+      actualsByBucket[Number(k)] = [...v].sort((a, b) => a.date.localeCompare(b.date));
     }
 
-    const sortedDates = [...allDates].sort();
-    const actualByDate: Record<string, number> = {};
-    for (const date of sortedDates) {
-      let total = 0;
-      for (const bucket of proj.projection.buckets) {
-        const list = actuals[bucket.bucketId] || [];
-        // Use the latest actual at-or-before this date, plus starting balance assumption.
-        const latest = [...list].reverse().find((a) => a.date <= date);
-        if (latest) total += latest.balance;
+    // 2. Find the latest actual date overall — the actual line stops here.
+    let latestActualDate: string | null = null;
+    for (const list of Object.values(actualsByBucket)) {
+      const last = list.at(-1);
+      if (last && (!latestActualDate || last.date > latestActualDate)) {
+        latestActualDate = last.date;
       }
-      actualByDate[date] = total;
     }
 
-    // Emit one combined series: projected on the projection grid; actual where we have data.
-    return proj.projection.aggregate.map((p) => ({
-      date: p.date,
-      ts: new Date(p.date).getTime(),
-      projected: p.balance,
-      actual: actualByDate[p.date] ?? null,
+    // 3. Helper: aggregated actual at a given date (sum of latest per bucket).
+    function actualAt(date: string): number | null {
+      if (!latestActualDate || date > latestActualDate) return null;
+      let sum = 0;
+      let any = false;
+      for (const bucket of projection.buckets) {
+        const list = actualsByBucket[bucket.bucketId] || [];
+        let latest: Actual | null = null;
+        for (const a of list) {
+          if (a.date <= date) latest = a;
+          else break; // list is sorted
+        }
+        if (latest) {
+          sum += latest.balance;
+          any = true;
+        }
+      }
+      return any ? sum : null;
+    }
+
+    // 4. Union of projection dates + actual dates so the X-axis can extend
+    //    left of the projection start when historical actuals exist.
+    const dateSet = new Set<string>();
+    for (const p of projection.aggregate) dateSet.add(p.date);
+    for (const list of Object.values(actualsByBucket)) {
+      for (const a of list) dateSet.add(a.date);
+    }
+    const sortedDates = [...dateSet].sort();
+
+    const projByDate = new Map(projection.aggregate.map((p) => [p.date, p.balance]));
+
+    return sortedDates.map((date) => ({
+      date,
+      ts: new Date(date).getTime(),
+      projected: projByDate.get(date) ?? null,
+      actual: actualAt(date),
     }));
   }, [proj, actuals]);
 
@@ -101,16 +131,15 @@ export function Dashboard() {
   }, [proj]);
 
   const heroDelta = useMemo(() => {
-    if (!chartData.length) return null;
-    // 12-month delta from projection
-    const now = new Date().toISOString().slice(0, 10);
-    const nowIdx = chartData.findIndex((p) => p.date >= now);
-    const past = chartData[Math.max(0, nowIdx - 12)];
-    const cur = chartData[nowIdx === -1 ? chartData.length - 1 : nowIdx];
-    if (!past || !cur || past.projected <= 0) return null;
-    const pct = (cur.projected - past.projected) / past.projected;
-    return pct;
-  }, [chartData]);
+    if (!proj) return null;
+    const agg = proj.projection.aggregate;
+    if (agg.length < 13) return null;
+    // Projected growth over the next 12 months from the projection start.
+    const start = agg[0];
+    const oneYear = agg[12];
+    if (!start || !oneYear || start.balance <= 0) return null;
+    return (oneYear.balance - start.balance) / start.balance;
+  }, [proj]);
 
   const ytdContributions = useMemo(() => {
     if (!proj) return 0;
@@ -127,9 +156,17 @@ export function Dashboard() {
   const drift = useMemo(() => {
     if (!proj || !chartData.length) return null;
     const today = new Date().toISOString().slice(0, 10);
-    const pt = chartData.find((p) => p.date >= today);
-    if (!pt || pt.actual == null) return null;
-    return pt.actual - pt.projected;
+    // Find the latest point at-or-before today where BOTH actual and
+    // projected are present, then compare them. Without this guard the
+    // chart can have dates from actuals that fall outside the projection
+    // window (projected = null), making the diff meaningless.
+    let best: ChartPoint | null = null;
+    for (const pt of chartData) {
+      if (pt.date > today) break;
+      if (pt.actual != null && pt.projected != null) best = pt;
+    }
+    if (!best) return null;
+    return (best.actual ?? 0) - (best.projected ?? 0);
   }, [proj, chartData]);
 
   if (loading || !proj || !activeScenario) {
@@ -158,7 +195,7 @@ export function Dashboard() {
                 heroDelta >= 0 ? 'text-secondary bg-secondary/10' : 'text-error bg-error/10'
               }`}>
                 {heroDelta >= 0 ? <TrendingUp size={14} className="mr-1" /> : <TrendingDown size={14} className="mr-1" />}
-                {(heroDelta * 100).toFixed(1)}% / yr
+                {(heroDelta * 100).toFixed(1)}% projected 1y
               </span>
             )}
           </div>
@@ -233,12 +270,13 @@ export function Dashboard() {
                   strokeWidth={2}
                   strokeDasharray="4 4"
                   fillOpacity={0}
+                  connectNulls
                   isAnimationActive={false}
                 />
                 {todayPoint && (
                   <ReferenceLine x={todayPoint.date} stroke="#464554" strokeDasharray="2 2" />
                 )}
-                {todayPoint && (
+                {todayPoint && todayPoint.projected != null && (
                   <ReferenceDot x={todayPoint.date} y={todayPoint.projected} r={4} fill="#c0c1ff" stroke="none" />
                 )}
               </AreaChart>
