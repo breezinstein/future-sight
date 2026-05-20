@@ -302,7 +302,7 @@ export function ScenarioDetail() {
                         <td className="py-2 pr-3">
                           <EventBadge type={e.type} />
                         </td>
-                        <td className="py-2 pr-3 text-on-surface-variant">{bucket?.name ?? 'All'}</td>
+                        <td className="py-2 pr-3 text-on-surface-variant">{bucket?.name ?? '—'}</td>
                         <td className="py-2 pr-3 tabular text-on-surface">
                           {e.type === 'rate_change' ? formatPercent(e.new_rate ?? 0) :
                            e.amount != null ? formatCurrency(e.amount, bucket?.currency ?? baseCurrency, { maximumFractionDigits: 0 }) :

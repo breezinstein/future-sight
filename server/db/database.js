@@ -168,6 +168,58 @@ runMigration('deprecate_contribution_change', () => {
   console.log(`[db] converted ${converted} contribution_change event(s) -> recurring monthly deposit events`);
 });
 
+// Events with bucket_id IS NULL on type='deposit'/'withdrawal' silently fired
+// against every bucket in the scenario, in each bucket's native currency. That
+// means an event with amount=1000 became -$1,000 from a USD bucket, -€1,000
+// from a EUR bucket, -₦1,000 from a NGN bucket, etc. — almost never what
+// users intended.
+//
+// Fix: expand each such event into one event per enabled bucket in the same
+// scenario. The original is deleted. Projection output stays bit-for-bit
+// identical to the previous (broken) behaviour because we copy the amount
+// verbatim into each child row, but now every individual deposit/withdrawal
+// is visible, editable, and tagged with the bucket's real currency.
+runMigration('expand_all_bucket_events', () => {
+  const rows = db.prepare(
+    `SELECT * FROM events
+     WHERE bucket_id IS NULL
+       AND type IN ('deposit','withdrawal')`,
+  ).all();
+  if (rows.length === 0) return;
+
+  const insert = db.prepare(
+    `INSERT INTO events (scenario_id, bucket_id, type, date, amount, new_rate, recurring, cadence, end_date, escalation_rate, enabled, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const drop = db.prepare('DELETE FROM events WHERE id = ?');
+  const bucketsForScenario = db.prepare(
+    'SELECT id FROM buckets WHERE scenario_id = ?',
+  );
+
+  let expanded = 0;
+  let into = 0;
+  for (const e of rows) {
+    const buckets = bucketsForScenario.all(e.scenario_id);
+    if (buckets.length === 0) {
+      drop.run(e.id);
+      continue;
+    }
+    const note = (e.notes ? `${e.notes}\n` : '')
+      + 'Expanded from a legacy "all buckets" event';
+    for (const b of buckets) {
+      insert.run(
+        e.scenario_id, b.id, e.type, e.date, e.amount, e.new_rate,
+        e.recurring, e.cadence, e.end_date, e.escalation_rate,
+        e.enabled, note,
+      );
+      into++;
+    }
+    drop.run(e.id);
+    expanded++;
+  }
+  console.log(`[db] expanded ${expanded} "all buckets" event(s) into ${into} per-bucket event(s)`);
+});
+
 console.log(`[db] SQLite ready at ${DB_PATH}`);
 
 export default db;

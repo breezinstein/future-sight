@@ -137,10 +137,15 @@ export function EventEditor({ scenarioId, buckets, event, onClose, onSaved }: Pr
           </div>
           <div>
             <label className="fs-label" htmlFor="event-bucket">Bucket</label>
-            <select id="event-bucket" className="fs-input mt-1" value={bucketId} onChange={(e) => setBucketId(e.target.value === '' ? '' : Number(e.target.value))}>
-              {type !== 'rate_change' && <option value="">All buckets</option>}
+            <select id="event-bucket" className="fs-input mt-1" value={bucketId} onChange={(e) => setBucketId(e.target.value === '' ? '' : Number(e.target.value))} required>
               {buckets.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
+            {(type === 'deposit' || type === 'withdrawal') && buckets.length > 1 && (
+              <p className="text-xs text-on-surface-variant mt-1">
+                One event = one bucket. Add a separate event per bucket if you want a
+                multi-bucket {type}.
+              </p>
+            )}
           </div>
 
           {type === 'rate_change' ? (

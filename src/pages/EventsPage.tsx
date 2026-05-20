@@ -72,7 +72,7 @@ export function EventsPage() {
                       <tr key={e.id} className={`border-b border-surface-container/50 ${e.enabled ? '' : 'opacity-50'}`}>
                         <td className="px-4 py-3 tabular text-on-surface">{formatDate(e.date)}</td>
                         <td className="px-4 py-3 text-on-surface-variant capitalize">{e.type.replace('_', ' ')}</td>
-                        <td className="px-4 py-3 text-on-surface-variant">{b?.name ?? 'All'}</td>
+                        <td className="px-4 py-3 text-on-surface-variant">{b?.name ?? '—'}</td>
                         <td className="px-4 py-3 tabular text-on-surface">
                           {e.type === 'rate_change' ? formatPercent(e.new_rate ?? 0) :
                            e.amount != null ? formatCurrency(e.amount, b?.currency ?? 'USD', { maximumFractionDigits: 0 }) : '—'}

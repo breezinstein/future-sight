@@ -49,6 +49,13 @@ router.post('/scenarios/:scenarioId/events', requireScenarioRole('editor'), (req
   if (d.recurring && !d.cadence) {
     return res.status(400).json({ error: 'cadence is required for recurring events' });
   }
+  // Deposits and withdrawals must target a specific bucket — "all buckets"
+  // is ambiguous when buckets have different currencies (event.amount has no
+  // currency of its own). Users who want a multi-bucket withdrawal create
+  // one event per bucket instead.
+  if ((d.type === 'deposit' || d.type === 'withdrawal') && d.bucketId == null) {
+    return res.status(400).json({ error: 'bucketId is required for deposit and withdrawal events' });
+  }
 
   const info = db
     .prepare(
