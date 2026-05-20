@@ -212,7 +212,6 @@ export function ScenarioDetail() {
                   if (!point) return null;
                   const color = e.type === 'rate_change' ? '#ffb95f' :
                                 e.type === 'withdrawal' ? '#ffb4ab' :
-                                e.type === 'contribution_change' ? '#4edea3' :
                                 '#c0c1ff';
                   return <ReferenceDot key={e.id} x={point.date} y={point.balance} r={5} fill={color} stroke="#131313" strokeWidth={2} />;
                 })}
@@ -401,13 +400,14 @@ export function ScenarioDetail() {
   );
 }
 
-function EventBadge({ type }: { type: PlanEvent['type'] }) {
-  const map: Record<PlanEvent['type'], { label: string; cls: string }> = {
+function EventBadge({ type }: { type: PlanEvent['type'] | string }) {
+  const map: Record<string, { label: string; cls: string }> = {
     deposit: { label: 'Deposit', cls: 'bg-secondary/15 text-secondary' },
     withdrawal: { label: 'Withdrawal', cls: 'bg-error/15 text-error' },
     rate_change: { label: 'Rate change', cls: 'bg-tertiary/15 text-tertiary' },
-    contribution_change: { label: 'Contrib. change', cls: 'bg-primary/15 text-primary' },
+    // Deprecated — kept for read-only display of any straggler legacy rows.
+    contribution_change: { label: 'Contrib. change (deprecated)', cls: 'bg-surface-container-high text-on-surface-variant' },
   };
-  const { label, cls } = map[type];
-  return <span className={`text-xs px-2 py-0.5 rounded ${cls}`}>{label}</span>;
+  const entry = map[type] ?? { label: String(type), cls: 'bg-surface-container-high text-on-surface-variant' };
+  return <span className={`text-xs px-2 py-0.5 rounded ${entry.cls}`}>{entry.label}</span>;
 }

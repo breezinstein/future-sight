@@ -9,7 +9,11 @@ router.use(requireAuth);
 
 const eventSchema = z.object({
   bucketId: z.number().int().nullable().optional(),
-  type: z.enum(['deposit', 'withdrawal', 'rate_change', 'contribution_change']),
+  // 'contribution_change' is intentionally NOT in this enum any more — the
+  // type is deprecated and the corresponding rows have been migrated to
+  // recurring deposit events. We keep it in the DB CHECK so historical reads
+  // of any straggler rows still work, but new ones can't be created.
+  type: z.enum(['deposit', 'withdrawal', 'rate_change']),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   amount: z.number().nullable().optional(),
   newRate: z.number().min(-0.5).max(1).nullable().optional(),
@@ -36,7 +40,7 @@ router.post('/scenarios/:scenarioId/events', requireScenarioRole('editor'), (req
   const d = parsed.data;
 
   // Validate type-specific required fields.
-  if ((d.type === 'deposit' || d.type === 'withdrawal' || d.type === 'contribution_change') && d.amount == null) {
+  if ((d.type === 'deposit' || d.type === 'withdrawal') && d.amount == null) {
     return res.status(400).json({ error: 'amount is required for this event type' });
   }
   if (d.type === 'rate_change' && d.newRate == null) {

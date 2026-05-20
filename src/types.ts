@@ -59,7 +59,10 @@ export interface Bucket {
   updated_at: string;
 }
 
-export type EventType = 'deposit' | 'withdrawal' | 'rate_change' | 'contribution_change';
+// EventType in the frontend covers only currently-creatable event types.
+// The DB still has a `contribution_change` row class for historical readability
+// but the migration converts those to deposits, and the UI doesn't expose it.
+export type EventType = 'deposit' | 'withdrawal' | 'rate_change';
 
 export type Cadence = 'monthly' | 'quarterly' | 'semi_annual' | 'annual' | 'biennial';
 

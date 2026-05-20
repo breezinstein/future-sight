@@ -130,6 +130,44 @@ runMigration('contributions_to_events', () => {
   console.log(`[db] migrated ${migrated} contribution schedule(s) -> recurring deposit events`);
 });
 
+// Convert every contribution_change event into the equivalent recurring monthly
+// deposit so the projection engine no longer needs the override branch. This
+// preserves the previous additive behaviour (the contribution_change amount
+// gets added on top of any existing deposits every month from the change date
+// forward) but expresses it as an explicit deposit that the user can see, edit,
+// or end-date like any other event.
+runMigration('deprecate_contribution_change', () => {
+  const ccEvents = db.prepare("SELECT * FROM events WHERE type = 'contribution_change'").all();
+  if (ccEvents.length === 0) return;
+
+  const insertDeposit = db.prepare(
+    `INSERT INTO events (scenario_id, bucket_id, type, date, amount, recurring, cadence, end_date, enabled, notes, escalation_rate)
+     VALUES (?, ?, 'deposit', ?, ?, 1, 'monthly', NULL, ?, ?, NULL)`,
+  );
+  const deleteEvent = db.prepare('DELETE FROM events WHERE id = ?');
+
+  let converted = 0;
+  for (const e of ccEvents) {
+    if (e.amount == null || e.bucket_id == null) {
+      // Malformed legacy row — drop it.
+      deleteEvent.run(e.id);
+      continue;
+    }
+    const notes = (e.notes ? `${e.notes}\n` : '') + 'Migrated from a contribution_change event';
+    insertDeposit.run(
+      e.scenario_id,
+      e.bucket_id,
+      e.date,
+      e.amount,
+      e.enabled,
+      notes,
+    );
+    deleteEvent.run(e.id);
+    converted++;
+  }
+  console.log(`[db] converted ${converted} contribution_change event(s) -> recurring monthly deposit events`);
+});
+
 console.log(`[db] SQLite ready at ${DB_PATH}`);
 
 export default db;

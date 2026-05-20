@@ -18,14 +18,12 @@ interface Props {
 const TYPE_LABEL: Record<EventType, string> = {
   deposit: 'Lump-sum deposit',
   withdrawal: 'Withdrawal',
-  contribution_change: 'Contribution change',
   rate_change: 'Rate change',
 };
 
 const TYPE_HINT: Record<EventType, string> = {
-  deposit: 'A one-time addition to the chosen bucket (e.g. inheritance, bonus).',
-  withdrawal: 'A one-time removal from the chosen bucket (e.g. house deposit, large purchase).',
-  contribution_change: 'Permanently change the monthly contribution from this date forward.',
+  deposit: 'A deposit to the chosen bucket (e.g. salary contribution, bonus, inheritance). Mark as recurring with a cadence to model regular savings.',
+  withdrawal: 'A removal from the chosen bucket (e.g. retirement income, house deposit, large purchase). Can recur too.',
   rate_change: 'Override the expected return for this bucket from this date onward.',
 };
 
@@ -114,7 +112,7 @@ export function EventEditor({ scenarioId, buckets, event, onClose, onSaved }: Pr
         <div>
           <label className="fs-label">Event type</label>
           <div className="grid grid-cols-2 gap-2 mt-1">
-            {(['deposit', 'withdrawal', 'contribution_change', 'rate_change'] as EventType[]).map((t) => (
+            {(['deposit', 'withdrawal', 'rate_change'] as EventType[]).map((t) => (
               <button
                 key={t}
                 type="button"
@@ -153,7 +151,7 @@ export function EventEditor({ scenarioId, buckets, event, onClose, onSaved }: Pr
           ) : (
             <div className="col-span-2">
               <label className="fs-label" htmlFor="event-amount">
-                Amount {type === 'withdrawal' ? '(deducted)' : type === 'contribution_change' ? '(new monthly amount)' : ''}
+                Amount {type === 'withdrawal' ? '(deducted)' : ''}
               </label>
               <CurrencyInput
                 id="event-amount"
@@ -168,8 +166,7 @@ export function EventEditor({ scenarioId, buckets, event, onClose, onSaved }: Pr
           )}
 
           {/* Recurring is only meaningful for amount-based events (deposit/withdrawal).
-              rate_change and contribution_change are sticky "from this date forward"
-              changes — they don't repeat. */}
+              rate_change is "from this date forward" — it doesn't repeat. */}
           {(type === 'deposit' || type === 'withdrawal') && (
             <div className="col-span-2 flex flex-col gap-3">
               <div className="flex items-center gap-3">

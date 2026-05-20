@@ -62,11 +62,16 @@ function applyGrowth(balance, annualRate, compounding, stepIndex) {
  *   (1 + escalation_rate)^(monthsSinceStart / 12)
  * so 3% annual escalation on a $5,000/mo withdrawal becomes $5,150/mo after
  * 12 months, $5,304/mo after 24 months, etc.
+ *
+ * Note: the legacy `contribution_change` event type is deprecated — the DB
+ * migration `deprecate_contribution_change` converts any existing rows into
+ * recurring monthly deposit events on startup, so this function never sees
+ * them in practice. The case is omitted from the switch; any orphaned rows
+ * fall through to the default and are ignored.
  */
 function applyMonthEvents(events, bucketId, monthDate) {
   let delta = 0;
   let newRate = null;
-  let contributionAdjustment = 0;
 
   for (const e of events) {
     if (!e.enabled) continue;
@@ -85,9 +90,7 @@ function applyMonthEvents(events, bucketId, monthDate) {
       triggers = isSameYearMonth(monthDate, start);
     }
 
-    if (!triggers && e.type !== 'rate_change' && e.type !== 'contribution_change') {
-      continue;
-    }
+    if (!triggers && e.type !== 'rate_change') continue;
 
     // Escalation multiplier — only meaningful for amount-bearing event types.
     let escalationMultiplier = 1;
@@ -109,18 +112,14 @@ function applyMonthEvents(events, bucketId, monthDate) {
           newRate = e.new_rate;
         }
         break;
-      case 'contribution_change':
-        // Permanent override of scheduled contribution from event date forward.
-        if (!isBefore(monthDate, start)) {
-          contributionAdjustment = e.amount || 0;
-        }
-        break;
       default:
+        // Unknown / deprecated types (e.g. contribution_change rows that
+        // somehow slipped past the migration) are silently ignored.
         break;
     }
   }
 
-  return { delta, newRate, contributionAdjustment };
+  return { delta, newRate };
 }
 
 function isSameYearMonth(a, b) {
@@ -140,7 +139,6 @@ export function projectBucket(bucket, events, startDate, horizonMonths) {
   const series = [];
   let balance = bucket.starting_balance;
   let currentRate = bucket.expected_return;
-  let contributionOverride = null;
 
   // Record the starting point.
   series.push({
@@ -154,29 +152,19 @@ export function projectBucket(bucket, events, startDate, horizonMonths) {
     const monthDate = addMonths(startDate, i);
 
     // Single pass over events for this month.
-    const { delta, newRate, contributionAdjustment } = applyMonthEvents(
-      events,
-      bucket.id,
-      monthDate,
-    );
+    const { delta, newRate } = applyMonthEvents(events, bucket.id, monthDate);
     if (newRate !== null) currentRate = newRate;
-    if (contributionAdjustment !== 0) contributionOverride = contributionAdjustment;
 
     // 1. Apply monthly growth at the (possibly newly-overridden) rate.
     balance = applyGrowth(balance, currentRate, bucket.compounding, i);
 
-    // 2. Apply any contribution_change baseline override (rare; recurring
-    //    deposit events are the main way to model regular savings now).
-    const scheduledContribution = contributionOverride ?? 0;
-    balance += scheduledContribution;
-
-    // 3. Apply one-off and recurring cash-flow events (deposits, withdrawals).
+    // 2. Apply one-off and recurring cash-flow events (deposits, withdrawals).
     balance += delta;
 
     series.push({
       date: format(monthDate, 'yyyy-MM-dd'),
       balance: roundCurrency(balance),
-      contribution: roundCurrency(scheduledContribution + Math.max(delta, 0)),
+      contribution: roundCurrency(Math.max(delta, 0)),
       rate: currentRate,
     });
   }
