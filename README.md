@@ -48,19 +48,52 @@ A self-hosted, household-shared **investment and wealth scenario planner**. Proj
 
 ## 🚀 Quick start
 
-### Option 1: Docker Compose (recommended)
+### Option 1: Pre-built image from GitHub Container Registry (recommended)
 
 ```bash
-git clone <repo-url> future-sight
-cd future-sight
-# Optional: generate a secure session secret
-echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
-docker compose up -d --build
+docker run -d \
+  --name future-sight \
+  -p 3002:3002 \
+  -v future-sight-data:/app/data \
+  -e SESSION_SECRET="$(openssl rand -hex 32)" \
+  --restart unless-stopped \
+  ghcr.io/breezinstein/future-sight:latest
+```
+
+Or with Docker Compose:
+
+```yaml
+services:
+  future-sight:
+    image: ghcr.io/breezinstein/future-sight:latest
+    container_name: future-sight
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    volumes:
+      - future-sight-data:/app/data
+    environment:
+      - NODE_ENV=production
+      - SESSION_SECRET=change-me-to-a-random-string
+      - ALLOW_REGISTRATION=true
+volumes:
+  future-sight-data:
+    driver: local
 ```
 
 Open <http://localhost:3002> and create your first account.
 
-### Option 2: Local development
+Images are published for **linux/amd64** and **linux/arm64** (Raspberry Pi 4+, Apple Silicon, etc.).
+
+### Option 2: Build from source
+
+```bash
+git clone https://github.com/breezinstein/future-sight.git
+cd future-sight
+docker compose up -d --build
+```
+
+### Option 3: Local development
 
 ```bash
 npm install
@@ -73,7 +106,7 @@ This starts both:
 
 Open <http://localhost:5174>.
 
-### Option 3: Production build (no Docker)
+### Option 4: Production build (no Docker)
 
 ```bash
 npm install
