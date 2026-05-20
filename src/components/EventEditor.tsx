@@ -1,0 +1,205 @@
+import { useState, type FormEvent } from 'react';
+import { events as eventsApi } from '@/api';
+import type { Bucket, PlanEvent, EventType } from '@/types';
+import { Modal } from './Modal';
+import { Spinner } from './Spinner';
+import { useToast } from '@/context/ToastContext';
+import { todayIso } from '@/lib/format';
+
+interface Props {
+  scenarioId: number;
+  buckets: Bucket[];
+  event: PlanEvent | null;
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+const TYPE_LABEL: Record<EventType, string> = {
+  deposit: 'Lump-sum deposit',
+  withdrawal: 'Withdrawal',
+  contribution_change: 'Contribution change',
+  rate_change: 'Rate change',
+};
+
+const TYPE_HINT: Record<EventType, string> = {
+  deposit: 'A one-time addition to the chosen bucket (e.g. inheritance, bonus).',
+  withdrawal: 'A one-time removal from the chosen bucket (e.g. house deposit, large purchase).',
+  contribution_change: 'Permanently change the monthly contribution from this date forward.',
+  rate_change: 'Override the expected return for this bucket from this date onward.',
+};
+
+export function EventEditor({ scenarioId, buckets, event, onClose, onSaved }: Props) {
+  const { show } = useToast();
+  const [type, setType] = useState<EventType>(event?.type ?? 'deposit');
+  const [bucketId, setBucketId] = useState<number | ''>(event?.bucket_id ?? (buckets[0]?.id ?? ''));
+  const [date, setDate] = useState(event?.date ?? todayIso());
+  const [amount, setAmount] = useState<number | ''>(event?.amount ?? '');
+  const [newRate, setNewRate] = useState<number | ''>(event?.new_rate != null ? event.new_rate * 100 : '');
+  const [recurring, setRecurring] = useState<boolean>(!!event?.recurring);
+  const [cadence, setCadence] = useState<'monthly' | 'quarterly' | 'annual'>(event?.cadence ?? 'monthly');
+  const [endDate, setEndDate] = useState(event?.end_date ?? '');
+  const [escalationRate, setEscalationRate] = useState<number | ''>(event?.escalation_rate != null ? event.escalation_rate * 100 : '');
+  const [enabled, setEnabled] = useState<boolean>(event?.enabled !== 0);
+  const [notes, setNotes] = useState(event?.notes ?? '');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const payload: Record<string, unknown> = {
+        type, date,
+        bucketId: bucketId === '' ? null : Number(bucketId),
+        amount: type === 'rate_change' ? null : amount === '' ? null : Number(amount),
+        newRate: type === 'rate_change' ? (newRate === '' ? null : Number(newRate) / 100) : null,
+        recurring,
+        cadence: recurring ? cadence : null,
+        endDate: recurring && endDate ? endDate : null,
+        escalationRate: recurring && escalationRate !== '' && (type === 'deposit' || type === 'withdrawal')
+          ? Number(escalationRate) / 100
+          : null,
+        enabled,
+        notes: notes || null,
+      };
+      if (event) {
+        await eventsApi.update(event.id, payload);
+        show('Event updated', 'success');
+      } else {
+        await eventsApi.create(scenarioId, payload);
+        show('Event created', 'success');
+      }
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal
+      open={true}
+      onClose={onClose}
+      title={event ? 'Edit event' : 'New event'}
+      footer={
+        <>
+          <button type="button" onClick={onClose} className="fs-btn fs-btn-ghost">Cancel</button>
+          <button type="submit" form="event-form" disabled={submitting} className="fs-btn fs-btn-primary">
+            {submitting ? <Spinner /> : event ? 'Save changes' : 'Create event'}
+          </button>
+        </>
+      }
+    >
+      <form id="event-form" onSubmit={onSubmit} className="flex flex-col gap-4">
+        {/* Type tabs */}
+        <div>
+          <label className="fs-label">Event type</label>
+          <div className="grid grid-cols-2 gap-2 mt-1">
+            {(['deposit', 'withdrawal', 'contribution_change', 'rate_change'] as EventType[]).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setType(t)}
+                className={`px-3 py-2 rounded text-sm border text-left transition-colors ${
+                  type === t
+                    ? 'bg-primary-container/20 border-primary text-primary'
+                    : 'bg-surface-container-lowest border-surface-container-high text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                {TYPE_LABEL[t]}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-on-surface-variant mt-2">{TYPE_HINT[type]}</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="fs-label" htmlFor="event-date">Date</label>
+            <input id="event-date" type="date" className="fs-input mt-1" value={date} onChange={(e) => setDate(e.target.value)} required />
+          </div>
+          <div>
+            <label className="fs-label" htmlFor="event-bucket">Bucket</label>
+            <select id="event-bucket" className="fs-input mt-1" value={bucketId} onChange={(e) => setBucketId(e.target.value === '' ? '' : Number(e.target.value))}>
+              {type !== 'rate_change' && <option value="">All buckets</option>}
+              {buckets.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </div>
+
+          {type === 'rate_change' ? (
+            <div className="col-span-2">
+              <label className="fs-label" htmlFor="event-rate">New expected return %</label>
+              <input id="event-rate" type="number" step="0.1" className="fs-input mt-1 tabular" placeholder="e.g. 5.5" value={newRate} onChange={(e) => setNewRate(e.target.value === '' ? '' : Number(e.target.value))} required />
+            </div>
+          ) : (
+            <div className="col-span-2">
+              <label className="fs-label" htmlFor="event-amount">
+                Amount {type === 'withdrawal' ? '(deducted)' : type === 'contribution_change' ? '(new monthly amount)' : ''}
+              </label>
+              <input id="event-amount" type="number" step="0.01" className="fs-input mt-1 tabular" value={amount} onChange={(e) => setAmount(e.target.value === '' ? '' : Number(e.target.value))} required />
+            </div>
+          )}
+
+          <div className="col-span-2 flex flex-col gap-3">
+            <div className="flex items-center gap-3">
+              <label className="inline-flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} className="accent-inverse-primary" />
+                <span className="text-sm text-on-surface">Recurring</span>
+              </label>
+              {recurring && (
+                <>
+                  <select className="fs-input flex-1" value={cadence} onChange={(e) => setCadence(e.target.value as 'monthly' | 'quarterly' | 'annual')}>
+                    <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="annual">Annual</option>
+                  </select>
+                  <input type="date" className="fs-input flex-1" placeholder="End date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                </>
+              )}
+            </div>
+
+            {recurring && (type === 'deposit' || type === 'withdrawal') && (
+              <div>
+                <label className="fs-label" htmlFor="escalation">
+                  Annual escalation % <span className="text-on-surface-variant normal-case tracking-normal">(optional)</span>
+                </label>
+                <input
+                  id="escalation"
+                  type="number"
+                  step="0.1"
+                  className="fs-input mt-1 tabular"
+                  placeholder="e.g. 3 to index withdrawals to inflation"
+                  value={escalationRate}
+                  onChange={(e) => setEscalationRate(e.target.value === '' ? '' : Number(e.target.value))}
+                />
+                <p className="text-xs text-on-surface-variant mt-1">
+                  Each occurrence's amount grows by this annual rate. 3% means a $1,000 withdrawal becomes
+                  $1,030 after a year, $1,061 after two, etc. Works with any cadence (we interpolate fractionally
+                  for monthly/quarterly).
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="col-span-2">
+            <label className="fs-label" htmlFor="event-notes">Notes (optional)</label>
+            <textarea id="event-notes" className="fs-input mt-1" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+          </div>
+
+          <div className="col-span-2 flex items-center gap-2">
+            <input id="event-enabled" type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} className="accent-inverse-primary" />
+            <label htmlFor="event-enabled" className="text-sm text-on-surface">Active in projection</label>
+          </div>
+        </div>
+
+        {error && (
+          <div className="px-3 py-2 rounded bg-error-container/30 border border-error/40 text-error text-sm">
+            {error}
+          </div>
+        )}
+      </form>
+    </Modal>
+  );
+}

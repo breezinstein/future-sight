@@ -1,0 +1,21 @@
+# Force LF line endings on shell scripts and Dockerfiles regardless of host OS.
+# This prevents the classic Windows CRLF -> "exec /entrypoint.sh: no such file or
+# directory" Docker failure (the kernel reads the shebang as "#!/bin/sh\r" and
+# can't find that interpreter).
+
+* text=auto eol=lf
+
+*.sh         text eol=lf
+*.bash       text eol=lf
+Dockerfile   text eol=lf
+entrypoint.* text eol=lf
+
+# Binary files — never touch.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.svg  text eol=lf
+*.woff binary
+*.woff2 binary

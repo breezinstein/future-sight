@@ -1,0 +1,236 @@
+@import "tailwindcss";
+
+/*
+ * Future Sight design tokens — derived from
+ * stitch_designs/.../future_sight/DESIGN.md
+ *
+ * Brand: dark-first, Linear-inspired, calm authority.
+ */
+
+@theme {
+  --color-surface: #131313;
+  --color-surface-dim: #131313;
+  --color-surface-bright: #3a3939;
+  --color-surface-container-lowest: #0e0e0e;
+  --color-surface-container-low: #1c1b1b;
+  --color-surface-container: #201f1f;
+  --color-surface-container-high: #2a2a2a;
+  --color-surface-container-highest: #353534;
+  --color-surface-variant: #353534;
+
+  --color-on-surface: #e5e2e1;
+  --color-on-surface-variant: #c7c4d7;
+
+  --color-inverse-surface: #e5e2e1;
+  --color-inverse-on-surface: #313030;
+  --color-inverse-primary: #494bd6;
+
+  --color-outline: #908fa0;
+  --color-outline-variant: #464554;
+
+  --color-primary: #c0c1ff;
+  --color-on-primary: #1000a9;
+  --color-primary-container: #8083ff;
+  --color-on-primary-container: #0d0096;
+  --color-primary-fixed: #e1e0ff;
+  --color-primary-fixed-dim: #c0c1ff;
+  --color-on-primary-fixed: #07006c;
+  --color-on-primary-fixed-variant: #2f2ebe;
+
+  --color-secondary: #4edea3;
+  --color-on-secondary: #003824;
+  --color-secondary-container: #00a572;
+  --color-on-secondary-container: #00311f;
+  --color-secondary-fixed: #6ffbbe;
+  --color-secondary-fixed-dim: #4edea3;
+  --color-on-secondary-fixed: #002113;
+  --color-on-secondary-fixed-variant: #005236;
+
+  --color-tertiary: #ffb95f;
+  --color-on-tertiary: #472a00;
+  --color-tertiary-container: #ca8100;
+  --color-on-tertiary-container: #3e2400;
+  --color-tertiary-fixed: #ffddb8;
+  --color-tertiary-fixed-dim: #ffb95f;
+  --color-on-tertiary-fixed: #2a1700;
+  --color-on-tertiary-fixed-variant: #653e00;
+
+  --color-error: #ffb4ab;
+  --color-on-error: #690005;
+  --color-error-container: #93000a;
+  --color-on-error-container: #ffdad6;
+
+  --color-background: #131313;
+  --color-on-background: #e5e2e1;
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  --radius-sm: 0.125rem;
+  --radius-DEFAULT: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+
+  --spacing-unit: 4px;
+  --spacing-stack-sm: 8px;
+  --spacing-stack-md: 16px;
+  --spacing-stack-lg: 32px;
+  --spacing-gutter: 16px;
+  --spacing-container-padding: 24px;
+}
+
+/* ---------- Base global styles ---------- */
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+}
+
+/* Tabular figures everywhere financial data shows up. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom scrollbar to match the surface tier system. */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--color-surface-container-lowest); }
+::-webkit-scrollbar-thumb { background: var(--color-surface-container-high); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-outline-variant); }
+
+/* ---------- Reusable utility classes ---------- */
+
+@layer components {
+  .fs-card {
+    background-color: var(--color-surface-container-low);
+    border: 1px solid var(--color-surface-container-high);
+    border-radius: var(--radius-DEFAULT);
+    transition: border-color 0.15s ease;
+  }
+  .fs-card:hover {
+    border-color: var(--color-surface-container-highest);
+  }
+
+  .fs-input {
+    background-color: var(--color-surface-container-lowest);
+    border: 1px solid var(--color-surface-container-highest);
+    border-radius: var(--radius-lg);
+    padding: 0.625rem 0.75rem;
+    color: var(--color-on-surface);
+    font-size: 16px;
+    line-height: 24px;
+    width: 100%;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .fs-input::placeholder { color: rgba(199, 196, 215, 0.4); }
+  .fs-input:focus {
+    outline: none;
+    border-color: var(--color-inverse-primary);
+    box-shadow: 0 0 0 2px var(--color-inverse-primary);
+  }
+  .fs-input[aria-invalid="true"] {
+    border-color: var(--color-error);
+  }
+
+  .fs-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1rem;
+    border-radius: var(--radius-lg);
+    font-weight: 500;
+    font-size: 14px;
+    line-height: 20px;
+    letter-spacing: 0.02em;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    cursor: pointer;
+  }
+  .fs-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .fs-btn-primary {
+    background-color: var(--color-inverse-primary);
+    color: #fff;
+    box-shadow: 0 0 15px rgba(73, 75, 214, 0.15);
+  }
+  .fs-btn-primary:hover:not(:disabled) {
+    background-color: #5a5cdc;
+    box-shadow: 0 0 20px rgba(73, 75, 214, 0.25);
+  }
+
+  .fs-btn-secondary {
+    background-color: transparent;
+    color: var(--color-on-surface);
+    border: 1px solid var(--color-surface-container-high);
+  }
+  .fs-btn-secondary:hover:not(:disabled) {
+    border-color: var(--color-outline-variant);
+    background-color: var(--color-surface-container);
+  }
+
+  .fs-btn-ghost {
+    background-color: transparent;
+    color: var(--color-on-surface-variant);
+  }
+  .fs-btn-ghost:hover:not(:disabled) {
+    color: var(--color-on-surface);
+    background-color: var(--color-surface-container);
+  }
+
+  .fs-btn-danger {
+    background-color: transparent;
+    color: var(--color-error);
+    border: 1px solid var(--color-error-container);
+  }
+  .fs-btn-danger:hover:not(:disabled) {
+    background-color: var(--color-error-container);
+    color: var(--color-on-error-container);
+  }
+
+  .fs-label {
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--color-on-surface-variant);
+  }
+
+  .fs-status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 9999px;
+    flex-shrink: 0;
+  }
+}
+
+/* ---------- Animations ---------- */
+
+@keyframes fs-skeleton {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.fs-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-container-low) 0%,
+    var(--color-surface-container-high) 50%,
+    var(--color-surface-container-low) 100%
+  );
+  background-size: 200% 100%;
+  animation: fs-skeleton 1.5s ease-in-out infinite;
+  border-radius: var(--radius-DEFAULT);
+}
+
+@keyframes fs-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fs-fade-in { animation: fs-fade-in 0.2s ease-out; }

@@ -1,0 +1,29 @@
+services:
+  future-sight:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: future-sight
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    volumes:
+      - future-sight-data:/app/data
+    environment:
+      - NODE_ENV=production
+      - PORT=3002
+      - SESSION_SECRET=${SESSION_SECRET:-change-me-in-production-please}
+      - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-true}
+      # Set TRUST_PROXY=true if behind a reverse proxy with TLS termination
+      # so secure cookies are issued.
+      - TRUST_PROXY=${TRUST_PROXY:-false}
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3002/api/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  future-sight-data:
+    driver: local
