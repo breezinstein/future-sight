@@ -14,7 +14,13 @@
 
 import { addMonths, parseISO, format, differenceInMonths, isBefore, isEqual } from 'date-fns';
 
-const CADENCE_MONTHS = { monthly: 1, quarterly: 3, annual: 12 };
+const CADENCE_MONTHS = {
+  monthly: 1,
+  quarterly: 3,
+  semi_annual: 6,
+  annual: 12,
+  biennial: 24,
+};
 
 /**
  * Apply interest for one monthly step.
@@ -39,29 +45,6 @@ function applyGrowth(balance, annualRate, compounding, stepIndex) {
   }
   // Monthly compounding: every step earns r/12.
   return balance * (1 + annualRate / 12);
-}
-
-/**
- * Compute the contribution for a given month-end date based on schedules.
- * Multiple active schedules are summed.
- */
-function contributionForMonth(schedules, monthDate) {
-  let total = 0;
-  for (const s of schedules) {
-    const start = parseISO(s.start_date);
-    if (isBefore(monthDate, start)) continue;
-    if (s.end_date) {
-      const end = parseISO(s.end_date);
-      if (isBefore(end, monthDate)) continue;
-    }
-    const months = differenceInMonths(monthDate, start);
-    if (months < 0) continue;
-    const step = CADENCE_MONTHS[s.cadence] || 1;
-    if (months % step === 0) {
-      total += s.amount;
-    }
-  }
-  return total;
 }
 
 /**
@@ -148,13 +131,12 @@ function isSameYearMonth(a, b) {
  * Project a single bucket forward over `months` months.
  *
  * @param {object} bucket           - bucket row
- * @param {object[]} schedules      - contribution_schedules rows for this bucket
  * @param {object[]} events         - events rows relevant to this scenario
  * @param {Date} startDate          - first month of projection
  * @param {number} horizonMonths    - number of monthly steps
  * @returns {{date: string, balance: number, contribution: number, rate: number}[]}
  */
-export function projectBucket(bucket, schedules, events, startDate, horizonMonths) {
+export function projectBucket(bucket, events, startDate, horizonMonths) {
   const series = [];
   let balance = bucket.starting_balance;
   let currentRate = bucket.expected_return;
@@ -183,13 +165,12 @@ export function projectBucket(bucket, schedules, events, startDate, horizonMonth
     // 1. Apply monthly growth at the (possibly newly-overridden) rate.
     balance = applyGrowth(balance, currentRate, bucket.compounding, i);
 
-    // 2. Apply scheduled contributions (or override).
-    const scheduledContribution = contributionOverride !== null
-      ? contributionOverride
-      : contributionForMonth(schedules, monthDate);
+    // 2. Apply any contribution_change baseline override (rare; recurring
+    //    deposit events are the main way to model regular savings now).
+    const scheduledContribution = contributionOverride ?? 0;
     balance += scheduledContribution;
 
-    // 3. Apply one-off cash-flow events (deposits, withdrawals).
+    // 3. Apply one-off and recurring cash-flow events (deposits, withdrawals).
     balance += delta;
 
     series.push({
@@ -216,7 +197,6 @@ export function projectBucket(bucket, schedules, events, startDate, horizonMonth
 export function projectScenario({
   scenario,
   buckets,
-  contributionsByBucket,
   events,
   baseCurrency,
   fxRates,            // { [currency]: rateToBase }
@@ -227,8 +207,7 @@ export function projectScenario({
   const monthStart = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
 
   const bucketSeries = buckets.map((b) => {
-    const schedules = contributionsByBucket[b.id] || [];
-    const series = projectBucket(b, schedules, events, monthStart, horizonMonths);
+    const series = projectBucket(b, events, monthStart, horizonMonths);
     return {
       bucketId: b.id,
       name: b.name,

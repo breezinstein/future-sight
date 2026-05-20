@@ -115,19 +115,19 @@ export function ScenarioDetail() {
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+      <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="flex items-center gap-3 min-w-0">
           <button
             type="button"
             onClick={() => navigate(-1)}
-            className="p-2 -ml-2 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors"
+            className="p-2 -ml-2 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0"
             aria-label="Back"
           >
             <ChevronLeft size={20} />
           </button>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-semibold text-on-surface">{scenario.name}</h1>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-2xl font-semibold text-on-surface truncate">{scenario.name}</h1>
               {scenario.is_base ? (
                 <span className="fs-label bg-primary-container/30 text-primary px-2 py-0.5 rounded">Base</span>
               ) : (
@@ -139,31 +139,31 @@ export function ScenarioDetail() {
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 md:justify-end">
+          <button type="button" onClick={() => setSettingsOpen(true)} className="fs-btn fs-btn-ghost" title="Edit scenario name, start date, horizon">
+            <SettingsIcon size={14} /> <span className="hidden sm:inline">Settings</span>
+          </button>
+          <button type="button" onClick={() => setCloneOpen(true)} className="fs-btn fs-btn-ghost">
+            <Copy size={14} /> <span className="hidden sm:inline">Clone</span>
+          </button>
           {!scenario.is_base && (
             <button type="button" onClick={onSetBase} className="fs-btn fs-btn-secondary" title="Use this scenario as the household's default plan">
-              <Star size={14} /> Set as base
+              <Star size={14} /> <span className="hidden sm:inline">Set as base</span>
             </button>
           )}
-          <button type="button" onClick={() => setSettingsOpen(true)} className="fs-btn fs-btn-secondary" title="Edit scenario name, start date, horizon">
-            <SettingsIcon size={14} /> Settings
-          </button>
-          <button type="button" onClick={() => setCloneOpen(true)} className="fs-btn fs-btn-secondary">
-            <Copy size={14} /> Clone
+          <button
+            type="button"
+            onClick={() => { setEditingBucket(null); setBucketEditorOpen(true); }}
+            className="fs-btn fs-btn-secondary"
+          >
+            <Plus size={14} /> Bucket
           </button>
           <button
             type="button"
             onClick={() => { setEditingEvent(null); setEventEditorOpen(true); }}
-            className="fs-btn fs-btn-secondary"
-          >
-            <Plus size={14} /> Event
-          </button>
-          <button
-            type="button"
-            onClick={() => { setEditingBucket(null); setBucketEditorOpen(true); }}
             className="fs-btn fs-btn-primary"
           >
-            <Plus size={14} /> Bucket
+            <Plus size={14} /> Event
           </button>
         </div>
       </header>

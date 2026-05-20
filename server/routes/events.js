@@ -14,7 +14,7 @@ const eventSchema = z.object({
   amount: z.number().nullable().optional(),
   newRate: z.number().min(-0.5).max(1).nullable().optional(),
   recurring: z.boolean().default(false),
-  cadence: z.enum(['monthly', 'quarterly', 'annual']).nullable().optional(),
+  cadence: z.enum(['monthly', 'quarterly', 'semi_annual', 'annual', 'biennial']).nullable().optional(),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   escalationRate: z.number().min(-0.5).max(1).nullable().optional(),
   enabled: z.boolean().default(true),

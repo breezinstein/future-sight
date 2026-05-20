@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Trash2, Copy, Pencil, Check, X } from 'lucide-react';
+import { Trash2, Copy, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { buckets as bucketsApi, fx as fxApi } from '@/api';
-import type { Bucket, ContributionSchedule, Actual } from '@/types';
+import type { Bucket, Actual } from '@/types';
 import { SlideOver } from './Modal';
 import { BucketIcon, ICON_NAMES } from './BucketIcon';
 import { Spinner } from './Spinner';
@@ -22,7 +22,9 @@ interface Props {
   onDelete?: () => void;
 }
 
-type Tab = 'details' | 'contributions' | 'actuals';
+// Contributions used to be a separate tab here. After unifying contributions
+// into recurring deposit events, the only sub-section is "actuals".
+type Tab = 'details' | 'actuals';
 
 export function BucketEditor({ scenarioId, bucket, onClose, onSaved, onDelete }: Props) {
   const { show } = useToast();
@@ -47,7 +49,6 @@ export function BucketEditor({ scenarioId, bucket, onClose, onSaved, onDelete }:
   const [icon, setIcon] = useState(bucket?.icon ?? 'wallet');
 
   const [submitting, setSubmitting] = useState(false);
-  const [contribs, setContribs] = useState<ContributionSchedule[]>([]);
   const [actuals, setActuals] = useState<Actual[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [currencies, setCurrencies] = useState<string[]>(sortCurrencies(FALLBACK_CURRENCIES));
@@ -63,7 +64,6 @@ export function BucketEditor({ scenarioId, bucket, onClose, onSaved, onDelete }:
     setLoadingDetail(true);
     bucketsApi.get(bucket.id)
       .then((b) => {
-        setContribs(b.contribution_schedules);
         setActuals(b.actuals);
       })
       .finally(() => setLoadingDetail(false));
@@ -97,63 +97,6 @@ export function BucketEditor({ scenarioId, bucket, onClose, onSaved, onDelete }:
     } finally {
       setSubmitting(false);
     }
-  }
-
-  // Contribution add form
-  const [cAmount, setCAmount] = useState<number | ''>('');
-  const [cCadence, setCCadence] = useState<'monthly' | 'quarterly' | 'annual'>('monthly');
-  const [cStart, setCStart] = useState(todayIso());
-  const [cEnd, setCEnd] = useState('');
-
-  async function onAddContribution() {
-    if (!bucket || cAmount === '' || !cStart) return;
-    await bucketsApi.contributions.add(bucket.id, {
-      amount: Number(cAmount),
-      cadence: cCadence,
-      startDate: cStart,
-      endDate: cEnd || null,
-    });
-    const fresh = await bucketsApi.get(bucket.id);
-    setContribs(fresh.contribution_schedules);
-    setCAmount('');
-    setCEnd('');
-    show('Contribution added', 'success');
-  }
-  async function onRemoveContribution(id: number) {
-    await bucketsApi.contributions.remove(id);
-    setContribs((cs) => cs.filter((c) => c.id !== id));
-    show('Contribution removed', 'success');
-  }
-
-  // Inline edit state for an existing contribution.
-  const [editingContribId, setEditingContribId] = useState<number | null>(null);
-  const [editAmount, setEditAmount] = useState<number | ''>('');
-  const [editCadence, setEditCadence] = useState<'monthly' | 'quarterly' | 'annual'>('monthly');
-  const [editStart, setEditStart] = useState('');
-  const [editEnd, setEditEnd] = useState('');
-
-  function startEditContrib(c: ContributionSchedule) {
-    setEditingContribId(c.id);
-    setEditAmount(c.amount);
-    setEditCadence(c.cadence);
-    setEditStart(c.start_date);
-    setEditEnd(c.end_date ?? '');
-  }
-  function cancelEditContrib() {
-    setEditingContribId(null);
-  }
-  async function saveEditContrib() {
-    if (editingContribId == null || editAmount === '' || !editStart) return;
-    await bucketsApi.contributions.update(editingContribId, {
-      amount: Number(editAmount),
-      cadence: editCadence,
-      startDate: editStart,
-      endDate: editEnd || null,
-    });
-    const fresh = await bucketsApi.get(bucket!.id);
-    setContribs(fresh.contribution_schedules);
-    setEditingContribId(null);
-    show('Contribution updated', 'success');
   }
 
   // Actual add form
@@ -198,7 +141,7 @@ export function BucketEditor({ scenarioId, bucket, onClose, onSaved, onDelete }:
     >
       {/* Tabs */}
       <div className="flex border-b border-surface-container-high mb-4 -mx-6 px-6">
-        {(['details', 'contributions', 'actuals'] as Tab[]).map((t) => (
+        {(['details', 'actuals'] as Tab[]).map((t) => (
           <button
             key={t}
             type="button"
@@ -302,123 +245,6 @@ export function BucketEditor({ scenarioId, bucket, onClose, onSaved, onDelete }:
         </form>
       )}
 
-      {tab === 'contributions' && bucket && (
-        <div className="flex flex-col gap-4">
-          <p className="text-sm text-on-surface-variant">
-            Recurring contributions to this bucket. Add multiple to model step-ups
-            (e.g. £500/mo until 2027, then £800/mo). Contributions stop on the
-            <span className="text-on-surface"> End date</span>, so leaving it blank
-            keeps them running indefinitely — that changes the long-term projection materially.
-          </p>
-
-          {/* Add-contribution panel — visually distinct so it's obvious the
-              fields here are a separate "add" form, not bucket-wide settings.
-              Save changes on the slide-over does NOT save these; the explicit
-              "Add contribution" button does. */}
-          <div className="fs-card p-4 bg-surface-container/40 flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <span className="fs-label">Add a new contribution</span>
-            </div>
-            <div className="grid grid-cols-12 gap-2 items-end">
-              <div className="col-span-3">
-                <label className="fs-label">Amount</label>
-                <CurrencyInput
-                  className="fs-input mt-1"
-                  value={cAmount}
-                  onChange={setCAmount}
-                  placeholder="e.g. 500"
-                  currencyHint={currency}
-                />
-              </div>
-              <div className="col-span-3">
-                <label className="fs-label">Cadence</label>
-                <select className="fs-input mt-1" value={cCadence} onChange={(e) => setCCadence(e.target.value as 'monthly' | 'quarterly' | 'annual')}>
-                  <option value="monthly">Monthly</option>
-                  <option value="quarterly">Quarterly</option>
-                  <option value="annual">Annual</option>
-                </select>
-              </div>
-              <div className="col-span-3">
-                <label className="fs-label">Start</label>
-                <input type="date" className="fs-input mt-1" value={cStart} onChange={(e) => setCStart(e.target.value)} />
-              </div>
-              <div className="col-span-3">
-                <label className="fs-label">End (optional)</label>
-                <input type="date" className="fs-input mt-1" value={cEnd} onChange={(e) => setCEnd(e.target.value)} />
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={onAddContribution}
-              disabled={cAmount === '' || !cStart}
-              className="fs-btn fs-btn-primary self-end"
-            >
-              <Check size={14} /> Add contribution
-            </button>
-          </div>
-
-          {loadingDetail ? <Spinner /> : contribs.length === 0 ? (
-            <div className="text-sm text-on-surface-variant py-4">No contribution schedules yet.</div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-on-surface-variant border-b border-surface-container-high">
-                  <th className="py-2 fs-label">Amount</th>
-                  <th className="py-2 fs-label">Cadence</th>
-                  <th className="py-2 fs-label">Start</th>
-                  <th className="py-2 fs-label">End</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {contribs.map((c) => editingContribId === c.id ? (
-                  <tr key={c.id} className="border-b border-surface-container/50 bg-surface-container/30">
-                    <td className="py-2 pr-2">
-                      <CurrencyInput className="fs-input" value={editAmount} onChange={setEditAmount} currencyHint={currency} />
-                    </td>
-                    <td className="py-2 pr-2">
-                      <select className="fs-input" value={editCadence} onChange={(e) => setEditCadence(e.target.value as 'monthly' | 'quarterly' | 'annual')}>
-                        <option value="monthly">Monthly</option>
-                        <option value="quarterly">Quarterly</option>
-                        <option value="annual">Annual</option>
-                      </select>
-                    </td>
-                    <td className="py-2 pr-2">
-                      <input type="date" className="fs-input" value={editStart} onChange={(e) => setEditStart(e.target.value)} />
-                    </td>
-                    <td className="py-2 pr-2">
-                      <input type="date" className="fs-input" value={editEnd} onChange={(e) => setEditEnd(e.target.value)} placeholder="Open-ended" />
-                    </td>
-                    <td className="py-2 text-right whitespace-nowrap">
-                      <button type="button" onClick={saveEditContrib} className="p-1 text-secondary hover:text-secondary-fixed-dim" aria-label="Save">
-                        <Check size={14} />
-                      </button>
-                      <button type="button" onClick={cancelEditContrib} className="p-1 text-on-surface-variant hover:text-on-surface" aria-label="Cancel">
-                        <X size={14} />
-                      </button>
-                    </td>
-                  </tr>
-                ) : (
-                  <tr key={c.id} className="border-b border-surface-container/50">
-                    <td className="py-2 tabular text-on-surface">{formatCurrency(c.amount, currency, { maximumFractionDigits: 0 })}</td>
-                    <td className="py-2 text-on-surface-variant capitalize">{c.cadence}</td>
-                    <td className="py-2 text-on-surface-variant tabular">{formatDate(c.start_date)}</td>
-                    <td className="py-2 text-on-surface-variant tabular">{c.end_date ? formatDate(c.end_date) : 'Open-ended'}</td>
-                    <td className="py-2 text-right whitespace-nowrap">
-                      <button type="button" onClick={() => startEditContrib(c)} className="text-on-surface-variant hover:text-primary p-1" aria-label="Edit">
-                        <Pencil size={14} />
-                      </button>
-                      <button type="button" onClick={() => onRemoveContribution(c.id)} className="text-on-surface-variant hover:text-error p-1" aria-label="Remove">
-                        <Trash2 size={14} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
 
       {tab === 'actuals' && bucket && (
         <div className="flex flex-col gap-4">

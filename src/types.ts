@@ -59,17 +59,9 @@ export interface Bucket {
   updated_at: string;
 }
 
-export interface ContributionSchedule {
-  id: number;
-  bucket_id: number;
-  amount: number;
-  cadence: 'monthly' | 'quarterly' | 'annual';
-  start_date: string;
-  end_date: string | null;
-  created_at: string;
-}
-
 export type EventType = 'deposit' | 'withdrawal' | 'rate_change' | 'contribution_change';
+
+export type Cadence = 'monthly' | 'quarterly' | 'semi_annual' | 'annual' | 'biennial';
 
 export interface PlanEvent {
   id: number;
@@ -80,7 +72,7 @@ export interface PlanEvent {
   amount: number | null;
   new_rate: number | null;
   recurring: 0 | 1;
-  cadence: 'monthly' | 'quarterly' | 'annual' | null;
+  cadence: Cadence | null;
   end_date: string | null;
   escalation_rate: number | null;
   enabled: 0 | 1;

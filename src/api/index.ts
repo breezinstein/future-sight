@@ -1,6 +1,6 @@
 import { api } from './client';
 import type {
-  User, Plan, PlanMember, Scenario, Bucket, ContributionSchedule, PlanEvent,
+  User, Plan, PlanMember, Scenario, Bucket, PlanEvent,
   Actual, ProjectionResponse, CompareResponse, ActivityEntry,
 } from '@/types';
 
@@ -66,7 +66,7 @@ export const buckets = {
   create: (scenarioId: number, data: Partial<Bucket> & { name: string }) =>
     api.post<{ id: number }>(`/api/scenarios/${scenarioId}/buckets`, mapBucketInput(data)),
   get: (id: number) =>
-    api.get<Bucket & { contribution_schedules: ContributionSchedule[]; actuals: Actual[] }>(
+    api.get<Bucket & { actuals: Actual[] }>(
       `/api/buckets/${id}`,
     ),
   update: (id: number, data: Partial<Bucket>) =>
@@ -74,14 +74,6 @@ export const buckets = {
   remove: (id: number) => api.del<{ ok: true }>(`/api/buckets/${id}`),
   copy: (id: number, scenarioId: number, name?: string) =>
     api.post<{ id: number }>(`/api/buckets/${id}/copy`, { scenarioId, name }),
-
-  contributions: {
-    add: (bucketId: number, data: { amount: number; cadence: 'monthly'|'quarterly'|'annual'; startDate: string; endDate?: string | null }) =>
-      api.post<{ id: number }>(`/api/buckets/${bucketId}/contributions`, data),
-    update: (id: number, data: Partial<{ amount: number; cadence: 'monthly'|'quarterly'|'annual'; startDate: string; endDate: string | null }>) =>
-      api.patch<{ ok: true }>(`/api/contributions/${id}`, data),
-    remove: (id: number) => api.del<{ ok: true }>(`/api/contributions/${id}`),
-  },
 
   actuals: {
     list: (bucketId: number) => api.get<Actual[]>(`/api/buckets/${bucketId}/actuals`),

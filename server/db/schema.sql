@@ -105,7 +105,11 @@ CREATE TABLE IF NOT EXISTS events (
   amount          REAL,                 -- for deposit/withdrawal/contribution_change
   new_rate        REAL,                 -- for rate_change (decimal, e.g. 0.04)
   recurring       INTEGER NOT NULL DEFAULT 0,
-  cadence         TEXT CHECK (cadence IN ('monthly','quarterly','annual')),
+  -- Cadence is validated at the application layer (see Zod schemas in routes/).
+  -- Supported values: 'monthly','quarterly','semi_annual','annual','biennial'.
+  -- We deliberately don't enforce a CHECK constraint here so we can extend the
+  -- enum without an ALTER TABLE / table-rebuild migration.
+  cadence         TEXT,
   end_date        TEXT,
   escalation_rate REAL,                 -- optional annual escalation, e.g. 0.03 for +3%/yr
   enabled         INTEGER NOT NULL DEFAULT 1,

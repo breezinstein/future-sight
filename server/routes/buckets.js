@@ -92,13 +92,10 @@ router.delete('/buckets/:id', requireBucketRole('editor'), (req, res) => {
 // GET /api/buckets/:id
 router.get('/buckets/:id', requireBucketRole('viewer'), (req, res) => {
   const bucket = db.prepare('SELECT * FROM buckets WHERE id = ?').get(req.bucketId);
-  const schedules = db
-    .prepare('SELECT * FROM contribution_schedules WHERE bucket_id = ? ORDER BY start_date')
-    .all(req.bucketId);
   const actuals = db
     .prepare('SELECT * FROM actuals WHERE bucket_id = ? ORDER BY date')
     .all(req.bucketId);
-  res.json({ ...bucket, contribution_schedules: schedules, actuals });
+  res.json({ ...bucket, actuals });
 });
 
 // POST /api/buckets/:id/copy
@@ -145,10 +142,13 @@ router.post('/buckets/:id/copy', requireBucketRole('viewer'), (req, res) => {
 
     const schedules = db.prepare('SELECT * FROM contribution_schedules WHERE bucket_id = ?').all(req.bucketId);
     for (const s of schedules) {
+      // Old contribution_schedules rows shouldn't exist after the
+      // contributions_to_events migration; this is a safety belt-and-braces
+      // copy in case the user is mid-upgrade.
       db.prepare(
-        `INSERT INTO contribution_schedules (bucket_id, amount, cadence, start_date, end_date)
-         VALUES (?, ?, ?, ?, ?)`,
-      ).run(newId, s.amount, s.cadence, s.start_date, s.end_date);
+        `INSERT INTO events (scenario_id, bucket_id, type, date, amount, recurring, cadence, end_date, enabled, notes, escalation_rate)
+         VALUES (?, ?, 'deposit', ?, ?, 1, ?, ?, 1, 'Migrated from contribution schedule', NULL)`,
+      ).run(parsed.data.scenarioId, newId, s.start_date, s.amount, s.cadence, s.end_date);
     }
 
     // Only copy events that are SCOPED to this bucket (events with bucket_id IS NULL
@@ -184,82 +184,14 @@ router.post('/buckets/:id/copy', requireBucketRole('viewer'), (req, res) => {
 });
 
 // ============================================================
-// Contribution schedules — nested under buckets
+// NOTE: Contribution schedules used to live here as a separate concept.
+// They've been unified into the "events" model — a recurring deposit event
+// (type='deposit', recurring=1) is now the single way to represent regular
+// contributions. The contribution_schedules table is left in the schema
+// untouched as a safety net but is no longer read or written; the
+// `contributions_to_events` migration in server/db/database.js copies any
+// remaining rows into recurring deposit events on startup and empties the
+// table.
 // ============================================================
-const scheduleSchema = z.object({
-  amount: z.number(),
-  cadence: z.enum(['monthly','quarterly','annual']).default('monthly'),
-  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-});
-
-router.post('/buckets/:id/contributions', requireBucketRole('editor'), (req, res) => {
-  const parsed = scheduleSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid input' });
-  const info = db
-    .prepare(
-      `INSERT INTO contribution_schedules (bucket_id, amount, cadence, start_date, end_date)
-       VALUES (?, ?, ?, ?, ?)`,
-    )
-    .run(req.bucketId, parsed.data.amount, parsed.data.cadence, parsed.data.startDate, parsed.data.endDate ?? null);
-  logAudit({ planId: req.planId, userId: req.user.id, action: 'contribution.created', entityType: 'contribution_schedule', entityId: info.lastInsertRowid });
-  res.status(201).json({ id: info.lastInsertRowid });
-});
-
-router.patch('/contributions/:id', requireAuth, (req, res) => {
-  // Resolve bucket/plan via the schedule to enforce role.
-  const id = Number(req.params.id);
-  const ctx = db
-    .prepare(
-      `SELECT cs.id, b.id AS bucket_id, s.plan_id, pm.role
-       FROM contribution_schedules cs
-       JOIN buckets b ON b.id = cs.bucket_id
-       JOIN scenarios s ON s.id = b.scenario_id
-       LEFT JOIN plan_members pm ON pm.plan_id = s.plan_id AND pm.user_id = ?
-       WHERE cs.id = ?`,
-    )
-    .get(req.user.id, id);
-  if (!ctx) return res.status(404).json({ error: 'Not found' });
-  if (!ctx.role || (ctx.role !== 'editor' && ctx.role !== 'owner')) {
-    return res.status(403).json({ error: 'Requires editor role' });
-  }
-  const partial = scheduleSchema.partial();
-  const parsed = partial.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid input' });
-  const map = { amount: 'amount', cadence: 'cadence', startDate: 'start_date', endDate: 'end_date' };
-  const updates = [];
-  const params = [];
-  for (const [k, v] of Object.entries(parsed.data)) {
-    if (v === undefined) continue;
-    updates.push(`${map[k]} = ?`);
-    params.push(v);
-  }
-  if (!updates.length) return res.json({ ok: true });
-  params.push(id);
-  db.prepare(`UPDATE contribution_schedules SET ${updates.join(', ')} WHERE id = ?`).run(...params);
-  logAudit({ planId: ctx.plan_id, userId: req.user.id, action: 'contribution.updated', entityType: 'contribution_schedule', entityId: id });
-  res.json({ ok: true });
-});
-
-router.delete('/contributions/:id', requireAuth, (req, res) => {
-  const id = Number(req.params.id);
-  const ctx = db
-    .prepare(
-      `SELECT s.plan_id, pm.role
-       FROM contribution_schedules cs
-       JOIN buckets b ON b.id = cs.bucket_id
-       JOIN scenarios s ON s.id = b.scenario_id
-       LEFT JOIN plan_members pm ON pm.plan_id = s.plan_id AND pm.user_id = ?
-       WHERE cs.id = ?`,
-    )
-    .get(req.user.id, id);
-  if (!ctx) return res.status(404).json({ error: 'Not found' });
-  if (!ctx.role || (ctx.role !== 'editor' && ctx.role !== 'owner')) {
-    return res.status(403).json({ error: 'Requires editor role' });
-  }
-  db.prepare('DELETE FROM contribution_schedules WHERE id = ?').run(id);
-  logAudit({ planId: ctx.plan_id, userId: req.user.id, action: 'contribution.deleted', entityType: 'contribution_schedule', entityId: id });
-  res.json({ ok: true });
-});
 
 export default router;

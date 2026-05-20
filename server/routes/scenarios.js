@@ -121,7 +121,8 @@ router.post('/scenarios/:id/clone', requireScenarioRole('editor'), (req, res) =>
       bucketIdMap.set(b.id, r.lastInsertRowid);
     }
 
-    // Copy contribution schedules.
+    // Copy contribution schedules (best-effort — should be empty after the
+    // contributions_to_events migration, but kept for upgrade-in-progress safety).
     const schedules = db
       .prepare(`SELECT cs.* FROM contribution_schedules cs
                 JOIN buckets b ON b.id = cs.bucket_id
@@ -130,9 +131,9 @@ router.post('/scenarios/:id/clone', requireScenarioRole('editor'), (req, res) =>
     for (const s of schedules) {
       const newBucketId = bucketIdMap.get(s.bucket_id);
       db.prepare(
-        `INSERT INTO contribution_schedules (bucket_id, amount, cadence, start_date, end_date)
-         VALUES (?, ?, ?, ?, ?)`,
-      ).run(newBucketId, s.amount, s.cadence, s.start_date, s.end_date);
+        `INSERT INTO events (scenario_id, bucket_id, type, date, amount, recurring, cadence, end_date, enabled, notes, escalation_rate)
+         VALUES (?, ?, 'deposit', ?, ?, 1, ?, ?, 1, 'Migrated from contribution schedule', NULL)`,
+      ).run(newScenarioId, newBucketId, s.start_date, s.amount, s.cadence, s.end_date);
     }
 
     // Copy events.

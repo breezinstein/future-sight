@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { events as eventsApi } from '@/api';
-import type { Bucket, PlanEvent, EventType } from '@/types';
+import type { Bucket, PlanEvent, EventType, Cadence } from '@/types';
 import { Modal } from './Modal';
 import { Spinner } from './Spinner';
 import { CurrencyInput } from './CurrencyInput';
@@ -37,7 +37,7 @@ export function EventEditor({ scenarioId, buckets, event, onClose, onSaved }: Pr
   const [amount, setAmount] = useState<number | ''>(event?.amount ?? '');
   const [newRate, setNewRate] = useState<number | ''>(event?.new_rate != null ? event.new_rate * 100 : '');
   const [recurring, setRecurring] = useState<boolean>(!!event?.recurring);
-  const [cadence, setCadence] = useState<'monthly' | 'quarterly' | 'annual'>(event?.cadence ?? 'monthly');
+  const [cadence, setCadence] = useState<Cadence>((event?.cadence as Cadence) ?? 'monthly');
   const [endDate, setEndDate] = useState(event?.end_date ?? '');
   const [escalationRate, setEscalationRate] = useState<number | ''>(event?.escalation_rate != null ? event.escalation_rate * 100 : '');
   const [enabled, setEnabled] = useState<boolean>(event?.enabled !== 0);
@@ -179,10 +179,12 @@ export function EventEditor({ scenarioId, buckets, event, onClose, onSaved }: Pr
                 </label>
                 {recurring && (
                   <>
-                    <select className="fs-input flex-1" value={cadence} onChange={(e) => setCadence(e.target.value as 'monthly' | 'quarterly' | 'annual')}>
+                    <select className="fs-input flex-1" value={cadence} onChange={(e) => setCadence(e.target.value as Cadence)}>
                       <option value="monthly">Monthly</option>
-                      <option value="quarterly">Quarterly</option>
-                      <option value="annual">Annual</option>
+                      <option value="quarterly">Quarterly (every 3 months)</option>
+                      <option value="semi_annual">Semi-annually (every 6 months)</option>
+                      <option value="annual">Annually</option>
+                      <option value="biennial">Biennially (every 2 years)</option>
                     </select>
                     <input type="date" className="fs-input flex-1" placeholder="End date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
                   </>

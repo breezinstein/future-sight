@@ -16,13 +16,6 @@ async function loadAndProject(scenarioId, baseCurrency) {
   const buckets = db.prepare('SELECT * FROM buckets WHERE scenario_id = ? AND enabled = 1').all(scenarioId);
   const events = db.prepare('SELECT * FROM events WHERE scenario_id = ?').all(scenarioId);
 
-  const contributionsByBucket = {};
-  for (const b of buckets) {
-    contributionsByBucket[b.id] = db
-      .prepare('SELECT * FROM contribution_schedules WHERE bucket_id = ?')
-      .all(b.id);
-  }
-
   const currencies = buckets.map((b) => b.currency);
   const fxRates = await getFxMap(baseCurrency, currencies);
 
@@ -32,7 +25,6 @@ async function loadAndProject(scenarioId, baseCurrency) {
   const projection = projectScenario({
     scenario,
     buckets,
-    contributionsByBucket,
     events,
     baseCurrency,
     fxRates,
