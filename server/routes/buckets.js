@@ -101,6 +101,88 @@ router.get('/buckets/:id', requireBucketRole('viewer'), (req, res) => {
   res.json({ ...bucket, contribution_schedules: schedules, actuals });
 });
 
+// POST /api/buckets/:id/copy
+// Deep-copy this bucket (including its contribution schedules, bucket-scoped
+// events, and recorded actuals) into another scenario within the same plan.
+// The target scenario can be the same one (effectively duplicates the bucket).
+router.post('/buckets/:id/copy', requireBucketRole('viewer'), (req, res) => {
+  const schema = z.object({
+    scenarioId: z.number().int(),
+    name: z.string().min(1).max(120).optional(),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid input', details: parsed.error.flatten() });
+
+  // Target scenario must be in the same plan and user must be able to edit it.
+  const target = db
+    .prepare(
+      `SELECT s.id, s.plan_id, pm.role
+       FROM scenarios s
+       LEFT JOIN plan_members pm ON pm.plan_id = s.plan_id AND pm.user_id = ?
+       WHERE s.id = ?`,
+    )
+    .get(req.user.id, parsed.data.scenarioId);
+  if (!target) return res.status(404).json({ error: 'Target scenario not found' });
+  if (target.plan_id !== req.planId) return res.status(400).json({ error: 'Cannot copy buckets across plans' });
+  if (target.role !== 'editor' && target.role !== 'owner') return res.status(403).json({ error: 'Requires editor role on target scenario' });
+
+  const source = db.prepare('SELECT * FROM buckets WHERE id = ?').get(req.bucketId);
+
+  const newBucketId = db.transaction(() => {
+    const info = db
+      .prepare(
+        `INSERT INTO buckets (scenario_id, name, category, currency, starting_balance, expected_return, compounding, target_amount, target_date, icon, color, sort_order, enabled)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        parsed.data.scenarioId,
+        parsed.data.name ?? source.name,
+        source.category, source.currency, source.starting_balance, source.expected_return,
+        source.compounding, source.target_amount, source.target_date, source.icon,
+        source.color, source.sort_order, source.enabled ?? 1,
+      );
+    const newId = info.lastInsertRowid;
+
+    const schedules = db.prepare('SELECT * FROM contribution_schedules WHERE bucket_id = ?').all(req.bucketId);
+    for (const s of schedules) {
+      db.prepare(
+        `INSERT INTO contribution_schedules (bucket_id, amount, cadence, start_date, end_date)
+         VALUES (?, ?, ?, ?, ?)`,
+      ).run(newId, s.amount, s.cadence, s.start_date, s.end_date);
+    }
+
+    // Only copy events that are SCOPED to this bucket (events with bucket_id IS NULL
+    // are scenario-wide and not tied to the bucket). Place them in the TARGET scenario.
+    const events = db.prepare('SELECT * FROM events WHERE bucket_id = ?').all(req.bucketId);
+    for (const e of events) {
+      db.prepare(
+        `INSERT INTO events (scenario_id, bucket_id, type, date, amount, new_rate, recurring, cadence, end_date, escalation_rate, enabled, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        parsed.data.scenarioId, newId, e.type, e.date, e.amount, e.new_rate,
+        e.recurring, e.cadence, e.end_date, e.escalation_rate ?? null, e.enabled, e.notes,
+      );
+    }
+
+    const actuals = db.prepare('SELECT * FROM actuals WHERE bucket_id = ?').all(req.bucketId);
+    for (const a of actuals) {
+      db.prepare(
+        `INSERT INTO actuals (bucket_id, date, balance, notes, created_by)
+         VALUES (?, ?, ?, ?, ?)`,
+      ).run(newId, a.date, a.balance, a.notes, a.created_by);
+    }
+
+    return newId;
+  })();
+
+  logAudit({
+    planId: req.planId, userId: req.user.id, action: 'bucket.copied',
+    entityType: 'bucket', entityId: newBucketId,
+    details: { source_bucket_id: req.bucketId, target_scenario_id: parsed.data.scenarioId, name: parsed.data.name ?? source.name },
+  });
+  res.status(201).json({ id: newBucketId });
+});
+
 // ============================================================
 // Contribution schedules — nested under buckets
 // ============================================================

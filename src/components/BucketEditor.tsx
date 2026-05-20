@@ -1,11 +1,14 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Copy } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { buckets as bucketsApi, fx as fxApi } from '@/api';
 import type { Bucket, ContributionSchedule, Actual } from '@/types';
 import { SlideOver } from './Modal';
 import { BucketIcon, ICON_NAMES } from './BucketIcon';
 import { Spinner } from './Spinner';
+import { BucketCopyModal } from './BucketCopyModal';
 import { useToast } from '@/context/ToastContext';
+import { useAuth } from '@/context/AuthContext';
 import { todayIso, formatCurrency, formatDate, formatPercent } from '@/lib/format';
 
 const FALLBACK_CURRENCIES = ['USD','EUR','GBP','JPY','CHF','CAD','AUD','NGN'];
@@ -22,7 +25,10 @@ type Tab = 'details' | 'contributions' | 'actuals';
 
 export function BucketEditor({ scenarioId, bucket, onClose, onSaved, onDelete }: Props) {
   const { show } = useToast();
+  const { state } = useAuth();
+  const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>('details');
+  const [copyOpen, setCopyOpen] = useState(false);
 
   const [name, setName] = useState(bucket?.name ?? '');
   const [category, setCategory] = useState(bucket?.category ?? '');
@@ -136,6 +142,11 @@ export function BucketEditor({ scenarioId, bucket, onClose, onSaved, onDelete }:
           {bucket && onDelete && (
             <button type="button" onClick={onDelete} className="fs-btn fs-btn-danger mr-auto">
               <Trash2 size={14} /> Delete
+            </button>
+          )}
+          {bucket && (
+            <button type="button" onClick={() => setCopyOpen(true)} className="fs-btn fs-btn-secondary">
+              <Copy size={14} /> Copy to scenario…
             </button>
           )}
           <button type="button" onClick={onClose} className="fs-btn fs-btn-ghost">Cancel</button>
@@ -348,6 +359,26 @@ export function BucketEditor({ scenarioId, bucket, onClose, onSaved, onDelete }:
             Current return assumption: <span className="text-on-surface tabular">{formatPercent(expectedReturn / 100)} {compounding}</span>
           </div>
         </div>
+      )}
+
+      {bucket && copyOpen && state.status === 'authenticated' && state.activePlanId && (
+        <BucketCopyModal
+          bucket={bucket}
+          currentScenarioId={scenarioId}
+          planId={state.activePlanId}
+          onClose={() => setCopyOpen(false)}
+          onCopied={(newBucketId, targetScenarioId) => {
+            setCopyOpen(false);
+            if (targetScenarioId === scenarioId) {
+              // Copy landed in the same scenario - just reload to show it in the list.
+              onSaved();
+            } else {
+              // Navigate to the target scenario with the new bucket selected.
+              onClose();
+              navigate(`/scenarios/${targetScenarioId}?bucket=${newBucketId}`);
+            }
+          }}
+        />
       )}
     </SlideOver>
   );

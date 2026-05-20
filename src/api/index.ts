@@ -72,6 +72,8 @@ export const buckets = {
   update: (id: number, data: Partial<Bucket>) =>
     api.patch<{ ok: true }>(`/api/buckets/${id}`, mapBucketInput(data)),
   remove: (id: number) => api.del<{ ok: true }>(`/api/buckets/${id}`),
+  copy: (id: number, scenarioId: number, name?: string) =>
+    api.post<{ id: number }>(`/api/buckets/${id}/copy`, { scenarioId, name }),
 
   contributions: {
     add: (bucketId: number, data: { amount: number; cadence: 'monthly'|'quarterly'|'annual'; startDate: string; endDate?: string | null }) =>
