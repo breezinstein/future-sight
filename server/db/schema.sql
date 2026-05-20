@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS scenarios (
   is_base                  INTEGER NOT NULL DEFAULT 0,
   cloned_from_scenario_id  INTEGER REFERENCES scenarios(id) ON DELETE SET NULL,
   horizon_years            INTEGER NOT NULL DEFAULT 30,
+  start_date               TEXT,                    -- ISO YYYY-MM-DD; NULL = use today at projection time
   created_at               TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at               TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -72,6 +73,7 @@ CREATE TABLE IF NOT EXISTS buckets (
   icon              TEXT DEFAULT 'wallet',       -- lucide icon name
   color             TEXT DEFAULT 'primary',
   sort_order        INTEGER NOT NULL DEFAULT 0,
+  enabled           INTEGER NOT NULL DEFAULT 1,  -- toggle bucket in/out of projections
   created_at        TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );

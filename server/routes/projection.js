@@ -10,7 +10,10 @@ router.use(requireAuth);
 
 async function loadAndProject(scenarioId, baseCurrency) {
   const scenario = db.prepare('SELECT * FROM scenarios WHERE id = ?').get(scenarioId);
-  const buckets = db.prepare('SELECT * FROM buckets WHERE scenario_id = ?').all(scenarioId);
+  // Only enabled buckets contribute to the projection. Disabled buckets are
+  // returned to the client via the scenario detail endpoint so the user can
+  // still see and re-enable them.
+  const buckets = db.prepare('SELECT * FROM buckets WHERE scenario_id = ? AND enabled = 1').all(scenarioId);
   const events = db.prepare('SELECT * FROM events WHERE scenario_id = ?').all(scenarioId);
 
   const contributionsByBucket = {};
@@ -23,6 +26,9 @@ async function loadAndProject(scenarioId, baseCurrency) {
   const currencies = buckets.map((b) => b.currency);
   const fxRates = await getFxMap(baseCurrency, currencies);
 
+  // Honour the scenario's stored start_date if set; otherwise project from today.
+  const startDate = scenario.start_date ? new Date(scenario.start_date) : new Date();
+
   const projection = projectScenario({
     scenario,
     buckets,
@@ -30,6 +36,7 @@ async function loadAndProject(scenarioId, baseCurrency) {
     events,
     baseCurrency,
     fxRates,
+    startDate,
   });
   return { scenario, projection };
 }

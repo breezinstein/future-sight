@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ChevronLeft, Copy, Plus, Trash2, Edit3 } from 'lucide-react';
+import { ChevronLeft, Copy, Plus, Trash2, Edit3, Settings as SettingsIcon } from 'lucide-react';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot,
 } from 'recharts';
@@ -8,9 +8,10 @@ import { scenarios as scenariosApi, buckets as bucketsApi, events as eventsApi }
 import type { Bucket, PlanEvent, ProjectionResponse, Scenario } from '@/types';
 import { FullPageSpinner } from '@/components/Spinner';
 import { BucketIcon } from '@/components/BucketIcon';
-import { formatCompactCurrency, formatCurrency, formatDate, formatPercent } from '@/lib/format';
+import { formatCompactCurrency, formatCurrency, formatDate, formatYearMonth, formatPercent } from '@/lib/format';
 import { BucketEditor } from '@/components/BucketEditor';
 import { EventEditor } from '@/components/EventEditor';
+import { ScenarioSettings } from '@/components/ScenarioSettings';
 import { Modal } from '@/components/Modal';
 import { useToast } from '@/context/ToastContext';
 import { useAuth } from '@/context/AuthContext';
@@ -37,6 +38,7 @@ export function ScenarioDetail() {
 
   const [cloneOpen, setCloneOpen] = useState(false);
   const [cloneName, setCloneName] = useState('');
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const baseCurrency = state.status === 'authenticated'
     ? state.plans.find((p) => p.id === scenario?.plan_id)?.base_currency ?? 'USD'
@@ -84,6 +86,12 @@ export function ScenarioDetail() {
     reload();
   }
 
+  async function onToggleBucket(b: Bucket) {
+    await bucketsApi.update(b.id, { enabled: (b.enabled ? 0 : 1) as 0 | 1 });
+    show(b.enabled ? `"${b.name}" excluded from projection` : `"${b.name}" included`, 'info');
+    reload();
+  }
+
   async function onClone() {
     if (!cloneName.trim()) return;
     const { id: newId } = await scenariosApi.clone(scenario!.id, cloneName.trim());
@@ -121,6 +129,9 @@ export function ScenarioDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button type="button" onClick={() => setSettingsOpen(true)} className="fs-btn fs-btn-secondary" title="Edit scenario name, start date, horizon">
+            <SettingsIcon size={14} /> Settings
+          </button>
           <button type="button" onClick={() => setCloneOpen(true)} className="fs-btn fs-btn-secondary">
             <Copy size={14} /> Clone
           </button>
@@ -144,10 +155,22 @@ export function ScenarioDetail() {
       <div className="grid grid-cols-1 @4xl:grid-cols-12 gap-4">
         {/* Projection chart */}
         <div className="fs-card p-4 @4xl:col-span-8 h-[400px] flex flex-col">
-          <div className="flex justify-between items-center mb-3">
-            <h2 className="fs-label">Net worth projection ({scenario.horizon_years}y horizon)</h2>
-            <div className="text-xs text-on-surface-variant tabular">
-              Final: {formatCompactCurrency(proj.projection.aggregate.at(-1)?.balance ?? 0, baseCurrency)}
+          <div className="flex justify-between items-start mb-3 gap-3 flex-wrap">
+            <div>
+              <h2 className="fs-label">Net worth projection</h2>
+              <p className="text-xs text-on-surface-variant mt-1 tabular">
+                Starts {formatYearMonth(proj.projection.startDate)}
+                {' → ends '}
+                {formatYearMonth(proj.projection.aggregate.at(-1)?.date ?? null)}
+                {' · '}
+                {scenario.horizon_years}y horizon
+              </p>
+            </div>
+            <div className="text-xs text-on-surface-variant tabular text-right">
+              Final aggregate<br/>
+              <span className="text-on-surface text-base">
+                {formatCompactCurrency(proj.projection.aggregate.at(-1)?.balance ?? 0, baseCurrency)}
+              </span>
             </div>
           </div>
           <div className="flex-1 min-h-0">
@@ -185,23 +208,26 @@ export function ScenarioDetail() {
         {/* Bucket list */}
         <aside className="@4xl:col-span-4 flex flex-col gap-2">
           <div className="flex items-center justify-between mb-1">
-            <h2 className="fs-label">Buckets ({buckets.length})</h2>
+            <h2 className="fs-label">Buckets ({buckets.filter((b) => b.enabled).length}/{buckets.length})</h2>
+            <span className="fs-label text-on-surface-variant">{buckets.filter((b) => !b.enabled).length > 0 ? `${buckets.filter((b) => !b.enabled).length} excluded` : ''}</span>
           </div>
           {buckets.length === 0 ? (
             <div className="fs-card p-6 text-center text-sm text-on-surface-variant">
               No buckets yet. Click <span className="text-primary">+ Bucket</span> to start.
             </div>
           ) : buckets.map((b) => (
-            <button
+            <div
               key={b.id}
-              type="button"
-              onClick={() => { setEditingBucket(b); setBucketEditorOpen(true); setParams({ bucket: String(b.id) }); }}
-              className="fs-card p-3 text-left flex items-center gap-3 hover:border-primary/40 transition-colors"
+              className={`fs-card p-3 flex items-center gap-3 transition-opacity ${b.enabled ? '' : 'opacity-50'}`}
             >
               <div className="w-9 h-9 rounded bg-surface-container flex items-center justify-center text-primary shrink-0">
                 <BucketIcon name={b.icon} />
               </div>
-              <div className="flex-1 min-w-0">
+              <button
+                type="button"
+                onClick={() => { setEditingBucket(b); setBucketEditorOpen(true); setParams({ bucket: String(b.id) }); }}
+                className="flex-1 min-w-0 text-left"
+              >
                 <div className="flex justify-between items-baseline gap-2">
                   <span className="text-sm font-medium text-on-surface truncate">{b.name}</span>
                   <span className="text-xs text-on-surface-variant tabular shrink-0">{formatPercent(b.expected_return)}</span>
@@ -210,8 +236,21 @@ export function ScenarioDetail() {
                   <span className="text-xs text-on-surface-variant truncate">{b.currency} · {b.category || 'uncategorised'}</span>
                   <span className="text-xs text-on-surface tabular">{formatCompactCurrency(b.starting_balance, b.currency)}</span>
                 </div>
-              </div>
-            </button>
+              </button>
+              <label
+                className="inline-flex items-center cursor-pointer shrink-0"
+                title={b.enabled ? 'Click to exclude from projection' : 'Click to include in projection'}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={!!b.enabled}
+                  onChange={() => onToggleBucket(b)}
+                />
+                <div className="w-9 h-5 bg-surface-container-highest rounded-full peer peer-checked:bg-inverse-primary relative transition-colors after:absolute after:top-0.5 after:left-0.5 after:w-4 after:h-4 after:bg-on-surface after:rounded-full after:transition-transform peer-checked:after:translate-x-4" />
+              </label>
+            </div>
           ))}
         </aside>
 
@@ -308,6 +347,14 @@ export function ScenarioDetail() {
           event={editingEvent}
           onClose={() => { setEventEditorOpen(false); setEditingEvent(null); }}
           onSaved={() => { setEventEditorOpen(false); setEditingEvent(null); reload(); }}
+        />
+      )}
+
+      {settingsOpen && (
+        <ScenarioSettings
+          scenario={scenario}
+          onClose={() => setSettingsOpen(false)}
+          onSaved={() => { setSettingsOpen(false); reload(); }}
         />
       )}
 

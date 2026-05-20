@@ -35,6 +35,7 @@ export interface Scenario {
   is_base: 0 | 1;
   cloned_from_scenario_id: number | null;
   horizon_years: number;
+  start_date: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -53,6 +54,7 @@ export interface Bucket {
   icon: string;
   color: string;
   sort_order: number;
+  enabled: 0 | 1;
   created_at: string;
   updated_at: string;
 }

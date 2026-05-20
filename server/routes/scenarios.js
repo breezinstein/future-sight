@@ -21,16 +21,23 @@ router.post('/plans/:planId/scenarios', requirePlanRole('editor'), (req, res) =>
     name: z.string().min(1).max(120),
     description: z.string().max(500).optional().nullable(),
     horizonYears: z.number().int().min(1).max(80).default(30),
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid input' });
 
   const info = db
     .prepare(
-      `INSERT INTO scenarios (plan_id, name, description, horizon_years)
-       VALUES (?, ?, ?, ?)`,
+      `INSERT INTO scenarios (plan_id, name, description, horizon_years, start_date)
+       VALUES (?, ?, ?, ?, ?)`,
     )
-    .run(req.planId, parsed.data.name, parsed.data.description ?? null, parsed.data.horizonYears);
+    .run(
+      req.planId,
+      parsed.data.name,
+      parsed.data.description ?? null,
+      parsed.data.horizonYears,
+      parsed.data.startDate ?? null,
+    );
 
   logAudit({ planId: req.planId, userId: req.user.id, action: 'scenario.created', entityType: 'scenario', entityId: info.lastInsertRowid, details: { name: parsed.data.name } });
   res.status(201).json({ id: info.lastInsertRowid });
@@ -54,6 +61,7 @@ router.patch('/scenarios/:id', requireScenarioRole('editor'), (req, res) => {
     name: z.string().min(1).max(120).optional(),
     description: z.string().max(500).optional().nullable(),
     horizonYears: z.number().int().min(1).max(80).optional(),
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid input' });
@@ -63,6 +71,7 @@ router.patch('/scenarios/:id', requireScenarioRole('editor'), (req, res) => {
   if (parsed.data.name !== undefined) { updates.push('name = ?'); params.push(parsed.data.name); }
   if (parsed.data.description !== undefined) { updates.push('description = ?'); params.push(parsed.data.description); }
   if (parsed.data.horizonYears !== undefined) { updates.push('horizon_years = ?'); params.push(parsed.data.horizonYears); }
+  if (parsed.data.startDate !== undefined) { updates.push('start_date = ?'); params.push(parsed.data.startDate); }
   if (!updates.length) return res.json({ ok: true });
   params.push(req.scenarioId);
   db.prepare(`UPDATE scenarios SET ${updates.join(', ')} WHERE id = ?`).run(...params);
@@ -91,10 +100,10 @@ router.post('/scenarios/:id/clone', requireScenarioRole('editor'), (req, res) =>
   const newId = db.transaction(() => {
     const info = db
       .prepare(
-        `INSERT INTO scenarios (plan_id, name, description, cloned_from_scenario_id, horizon_years)
-         VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO scenarios (plan_id, name, description, cloned_from_scenario_id, horizon_years, start_date)
+         VALUES (?, ?, ?, ?, ?, ?)`,
       )
-      .run(source.plan_id, parsed.data.name, source.description, source.id, source.horizon_years);
+      .run(source.plan_id, parsed.data.name, source.description, source.id, source.horizon_years, source.start_date);
     const newScenarioId = info.lastInsertRowid;
 
     const buckets = db.prepare('SELECT * FROM buckets WHERE scenario_id = ?').all(source.id);
@@ -102,12 +111,12 @@ router.post('/scenarios/:id/clone', requireScenarioRole('editor'), (req, res) =>
     for (const b of buckets) {
       const r = db
         .prepare(
-          `INSERT INTO buckets (scenario_id, name, category, currency, starting_balance, expected_return, compounding, target_amount, target_date, icon, color, sort_order)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO buckets (scenario_id, name, category, currency, starting_balance, expected_return, compounding, target_amount, target_date, icon, color, sort_order, enabled)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           newScenarioId, b.name, b.category, b.currency, b.starting_balance, b.expected_return,
-          b.compounding, b.target_amount, b.target_date, b.icon, b.color, b.sort_order,
+          b.compounding, b.target_amount, b.target_date, b.icon, b.color, b.sort_order, b.enabled ?? 1,
         );
       bucketIdMap.set(b.id, r.lastInsertRowid);
     }

@@ -19,6 +19,7 @@ const bucketSchema = z.object({
   icon: z.string().max(40).default('wallet'),
   color: z.string().max(40).default('primary'),
   sortOrder: z.number().int().default(0),
+  enabled: z.boolean().optional(),
 });
 
 // POST /api/scenarios/:scenarioId/buckets
@@ -28,8 +29,8 @@ router.post('/scenarios/:scenarioId/buckets', requireScenarioRole('editor'), (re
   const d = parsed.data;
   const info = db
     .prepare(
-      `INSERT INTO buckets (scenario_id, name, category, currency, starting_balance, expected_return, compounding, target_amount, target_date, icon, color, sort_order)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO buckets (scenario_id, name, category, currency, starting_balance, expected_return, compounding, target_amount, target_date, icon, color, sort_order, enabled)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
     )
     .run(
       req.scenarioId,
@@ -59,14 +60,20 @@ router.patch('/buckets/:id', requireBucketRole('editor'), (req, res) => {
     name: 'name', category: 'category', currency: 'currency',
     startingBalance: 'starting_balance', expectedReturn: 'expected_return',
     compounding: 'compounding', targetAmount: 'target_amount', targetDate: 'target_date',
-    icon: 'icon', color: 'color', sortOrder: 'sort_order',
+    icon: 'icon', color: 'color', sortOrder: 'sort_order', enabled: 'enabled',
   };
   const updates = [];
   const params = [];
   for (const [k, v] of Object.entries(d)) {
     if (v === undefined) continue;
     updates.push(`${map[k]} = ?`);
-    params.push(typeof v === 'string' && k === 'currency' ? v.toUpperCase() : v);
+    if (k === 'enabled') {
+      params.push(v ? 1 : 0);
+    } else if (typeof v === 'string' && k === 'currency') {
+      params.push(v.toUpperCase());
+    } else {
+      params.push(v);
+    }
   }
   if (!updates.length) return res.json({ ok: true });
   params.push(req.bucketId);

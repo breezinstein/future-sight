@@ -33,6 +33,8 @@ function ensureColumn(table, column, definition) {
 }
 
 ensureColumn('events', 'escalation_rate', 'REAL');
+ensureColumn('scenarios', 'start_date', 'TEXT');
+ensureColumn('buckets', 'enabled', "INTEGER NOT NULL DEFAULT 1");
 
 console.log(`[db] SQLite ready at ${DB_PATH}`);
 

@@ -46,9 +46,9 @@ export const scenarios = {
   list: (planId: number) => api.get<Scenario[]>(`/api/plans/${planId}/scenarios`),
   get: (id: number) =>
     api.get<Scenario & { buckets: Bucket[]; events: PlanEvent[] }>(`/api/scenarios/${id}`),
-  create: (planId: number, data: { name: string; description?: string | null; horizonYears?: number }) =>
+  create: (planId: number, data: { name: string; description?: string | null; horizonYears?: number; startDate?: string | null }) =>
     api.post<{ id: number }>(`/api/plans/${planId}/scenarios`, data),
-  update: (id: number, data: { name?: string; description?: string | null; horizonYears?: number }) =>
+  update: (id: number, data: { name?: string; description?: string | null; horizonYears?: number; startDate?: string | null }) =>
     api.patch<{ ok: true }>(`/api/scenarios/${id}`, data),
   remove: (id: number) => api.del<{ ok: true }>(`/api/scenarios/${id}`),
   clone: (id: number, name: string) =>
@@ -106,6 +106,7 @@ function mapBucketInput(data: Partial<Bucket>) {
   if (data.icon !== undefined) out.icon = data.icon;
   if (data.color !== undefined) out.color = data.color;
   if (data.sort_order !== undefined) out.sortOrder = data.sort_order;
+  if (data.enabled !== undefined) out.enabled = data.enabled === 1;
   return out;
 }
 
