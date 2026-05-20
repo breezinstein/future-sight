@@ -122,6 +122,7 @@ export interface Projection {
   horizonMonths: number;
   startDate: string;
   baseCurrency: string;
+  fxRates: Record<string, number>;
   buckets: BucketSeries[];
   aggregate: ProjectionPoint[];
 }

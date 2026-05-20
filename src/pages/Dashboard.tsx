@@ -105,12 +105,24 @@ export function Dashboard() {
       }
     }
 
-    // 3. Helper: aggregated actual at a given date (sum of latest per bucket).
+    // 3. Helper: aggregated actual at a given date.
+    //    - Sums ACROSS ALL enabled buckets, not just one.
+    //    - For each bucket: uses the most recent actual at-or-before `date`,
+    //      OR falls back to that bucket's starting balance if no actual has
+    //      been recorded yet. This way one bucket's recorded actuals don't
+    //      mask the rest of the household's net worth.
+    //    - Converts each bucket's value to the plan's base currency via the
+    //      projection's fxRates map so multi-currency buckets sum correctly.
+    //    - Returns null only if NO bucket has any actual at-or-before `date`,
+    //      so the chart line doesn't start before the first observation.
     function actualAt(date: string): number | null {
       if (!latestActualDate || date > latestActualDate) return null;
       let sum = 0;
-      let any = false;
+      let anyBucketHasActual = false;
       for (const bucket of projection.buckets) {
+        const fxRate = bucket.currency === projection.baseCurrency
+          ? 1
+          : (projection.fxRates?.[bucket.currency] ?? 1);
         const list = actualsByBucket[bucket.bucketId] || [];
         let latest: Actual | null = null;
         for (const a of list) {
@@ -118,11 +130,16 @@ export function Dashboard() {
           else break; // list is sorted
         }
         if (latest) {
-          sum += latest.balance;
-          any = true;
+          sum += latest.balance * fxRate;
+          anyBucketHasActual = true;
+        } else {
+          // Fall back to the bucket's starting balance so this bucket still
+          // contributes to "net worth at this date" even without observations.
+          const startingInBase = (bucket.series[0]?.balance ?? 0) * fxRate;
+          sum += startingInBase;
         }
       }
-      return any ? sum : null;
+      return anyBucketHasActual ? sum : null;
     }
 
     // 4. Union of projection dates + actual dates so the X-axis can extend
@@ -145,14 +162,19 @@ export function Dashboard() {
   }, [proj, actuals]);
 
   const heroValue = useMemo(() => {
-    if (!proj) return 0;
-    // "Now" = first projection point (which uses starting_balance for each bucket
-    // unless we override with the latest actual sum).
+    if (!proj || !chartData.length) return 0;
     const today = new Date().toISOString().slice(0, 10);
-    const latestPastIdx = proj.projection.aggregate.findIndex((p) => p.date >= today);
-    const idx = latestPastIdx === -1 ? 0 : Math.max(0, latestPastIdx);
-    return proj.projection.aggregate[idx]?.balance ?? 0;
-  }, [proj]);
+    // Prefer the actual line at the latest date at-or-before today. Falls
+    // back to projection. This way the hero shows the true current net worth
+    // when the user has been recording actuals, but stays sensible if not.
+    for (let i = chartData.length - 1; i >= 0; i--) {
+      const pt = chartData[i];
+      if (pt.date > today) continue;
+      if (pt.actual != null) return pt.actual;
+      if (pt.projected != null) return pt.projected;
+    }
+    return proj.projection.aggregate[0]?.balance ?? 0;
+  }, [proj, chartData]);
 
   const heroDelta = useMemo(() => {
     if (!proj) return null;

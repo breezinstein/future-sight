@@ -264,6 +264,7 @@ export function projectScenario({
     horizonMonths,
     startDate: format(monthStart, 'yyyy-MM-dd'),
     baseCurrency,
+    fxRates,
     buckets: bucketSeries,
     aggregate,
   };
