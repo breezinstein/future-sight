@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, Copy, Plus, Trash2, Edit3, Settings as SettingsIcon, Star } from 'lucide-react';
 import {
-  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot,
+  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot, Line, Legend,
 } from 'recharts';
 import { scenarios as scenariosApi, buckets as bucketsApi, events as eventsApi } from '@/api';
-import type { Bucket, PlanEvent, ProjectionResponse, Scenario } from '@/types';
+import type { Actual, Bucket, PlanEvent, ProjectionResponse, Scenario } from '@/types';
 import { FullPageSpinner } from '@/components/Spinner';
 import { BucketIcon } from '@/components/BucketIcon';
+import { InfoTip } from '@/components/InfoTip';
 import { formatCompactCurrency, formatCurrency, formatDate, formatYearMonth, formatPercent } from '@/lib/format';
 import { BucketEditor } from '@/components/BucketEditor';
 import { EventEditor } from '@/components/EventEditor';
@@ -28,6 +29,8 @@ export function ScenarioDetail() {
   const [buckets, setBuckets] = useState<Bucket[]>([]);
   const [events, setEvents] = useState<PlanEvent[]>([]);
   const [proj, setProj] = useState<ProjectionResponse | null>(null);
+  const [actualsByBucket, setActualsByBucket] = useState<Record<number, Actual[]>>({});
+  const [showActuals, setShowActuals] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
 
   const [bucketEditorOpen, setBucketEditorOpen] = useState(false);
@@ -51,19 +54,86 @@ export function ScenarioDetail() {
     setEvents(detail.events);
     const p = await scenariosApi.projection(id);
     setProj(p);
+    const entries = await Promise.all(
+      p.projection.buckets.map(async (b) =>
+        [b.bucketId, await bucketsApi.actuals.list(b.bucketId)] as const,
+      ),
+    );
+    setActualsByBucket(Object.fromEntries(entries));
     setHasLoaded(true);
   }, [id]);
 
   useEffect(() => { reload(); }, [reload]);
 
-  // Open bucket editor if ?bucket=ID query param is present.
+  // Open bucket editor when ?bucket=ID arrives from an external link (e.g.
+  // Dashboard bucket cards). We clear the param immediately so back-navigation
+  // doesn't re-open the editor (the prior URL is no longer in history).
   useEffect(() => {
     const bid = Number(params.get('bucket'));
-    if (bid && buckets.length) {
-      const b = buckets.find((x) => x.id === bid);
-      if (b) { setEditingBucket(b); setBucketEditorOpen(true); }
+    if (!bid || !buckets.length) return;
+    const b = buckets.find((x) => x.id === bid);
+    if (b) {
+      setEditingBucket(b);
+      setBucketEditorOpen(true);
+      setParams({}, { replace: true });
     }
-  }, [params, buckets]);
+  }, [params, buckets, setParams]);
+
+  // Aggregate per-bucket actuals into a single base-currency series matching
+  // the projection's monthly cadence. Latest-balance-at-or-before each month
+  // per bucket is summed across all enabled buckets (using projection FX rates
+  // for currency conversion). Returns a sparse map: date -> aggregated actual.
+  const actualsSeries = useMemo(() => {
+    if (!proj) return new Map<string, number>();
+    const fxRates = proj.projection.fxRates ?? {};
+    const planBase = proj.projection.baseCurrency ?? baseCurrency;
+    const dates = proj.projection.aggregate.map((p) => p.date);
+    const today = new Date().toISOString().slice(0, 10);
+    const out = new Map<string, number>();
+    const enabledBuckets = proj.projection.buckets;
+    // Precompute sorted lists per bucket
+    const sorted: Record<number, Actual[]> = {};
+    for (const b of enabledBuckets) {
+      sorted[b.bucketId] = [...(actualsByBucket[b.bucketId] ?? [])].sort(
+        (a, c) => a.date.localeCompare(c.date),
+      );
+    }
+    for (const date of dates) {
+      if (date > today) break;
+      let anyActual = false;
+      let sum = 0;
+      for (const b of enabledBuckets) {
+        const fx = b.currency === planBase ? 1 : (fxRates[b.currency] ?? 1);
+        const list = sorted[b.bucketId];
+        let latest: Actual | null = null;
+        for (const a of list) {
+          if (a.date <= date) latest = a;
+          else break;
+        }
+        if (latest) {
+          anyActual = true;
+          sum += latest.balance * fx;
+        } else {
+          // No actual yet: fall back to bucket's first projected balance
+          // (i.e. starting balance in base currency) so the line begins at
+          // the same point as the projection.
+          sum += (b.series[0]?.balance ?? 0) * fx;
+        }
+      }
+      if (anyActual) out.set(date, sum);
+    }
+    return out;
+  }, [proj, actualsByBucket, baseCurrency]);
+
+  const chartData = useMemo(() => {
+    if (!proj) return [];
+    return proj.projection.aggregate.map((p) => ({
+      ...p,
+      actual: actualsSeries.get(p.date) ?? null,
+    }));
+  }, [proj, actualsSeries]);
+
+  const hasActuals = actualsSeries.size > 0;
 
   if (!hasLoaded || !scenario || !proj) return <FullPageSpinner />;
 
@@ -173,7 +243,14 @@ export function ScenarioDetail() {
         <div className="fs-card p-4 @4xl:col-span-8 h-[400px] flex flex-col">
           <div className="flex justify-between items-start mb-3 gap-3 flex-wrap">
             <div>
-              <h2 className="fs-label">Net worth projection</h2>
+              <h2 className="fs-label inline-flex items-center">
+                Net worth projection
+                <InfoTip label="net worth projection">
+                  Sum of all enabled buckets in this scenario, projected forward month-by-month
+                  using each bucket's expected return and any timeline events. Currencies are
+                  converted to the plan's base currency.
+                </InfoTip>
+              </h2>
               <p className="text-xs text-on-surface-variant mt-1 tabular">
                 Starts {formatYearMonth(proj.projection.startDate)}
                 {' → ends '}
@@ -182,16 +259,29 @@ export function ScenarioDetail() {
                 {scenario.horizon_years}y horizon
               </p>
             </div>
-            <div className="text-xs text-on-surface-variant tabular text-right">
-              Final aggregate<br/>
-              <span className="text-on-surface text-base">
-                {formatCompactCurrency(proj.projection.aggregate.at(-1)?.balance ?? 0, baseCurrency)}
-              </span>
+            <div className="flex items-start gap-3 flex-wrap">
+              {hasActuals && (
+                <label className="inline-flex items-center gap-2 text-xs text-on-surface-variant cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showActuals}
+                    onChange={(e) => setShowActuals(e.target.checked)}
+                    className="accent-inverse-primary"
+                  />
+                  <span>Show actuals</span>
+                </label>
+              )}
+              <div className="text-xs text-on-surface-variant tabular text-right">
+                Final aggregate<br/>
+                <span className="text-on-surface text-base">
+                  {formatCompactCurrency(proj.projection.aggregate.at(-1)?.balance ?? 0, baseCurrency)}
+                </span>
+              </div>
             </div>
           </div>
           <div className="flex-1 min-h-0">
             <ResponsiveContainer>
-              <AreaChart data={proj.projection.aggregate} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+              <AreaChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="scenFill" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#c0c1ff" stopOpacity={0.3} />
@@ -204,9 +294,22 @@ export function ScenarioDetail() {
                 <Tooltip
                   contentStyle={{ background: '#201f1f', border: '1px solid #2a2a2a', borderRadius: 4, fontSize: 12 }}
                   labelFormatter={(l) => formatDate(l as string)}
-                  formatter={(v: number) => formatCurrency(v, baseCurrency, { maximumFractionDigits: 0 })}
+                  formatter={(v: number, name) => [
+                    formatCurrency(v, baseCurrency, { maximumFractionDigits: 0 }),
+                    name === 'actual' ? 'Actual' : 'Projected',
+                  ]}
                 />
-                <Area type="monotone" dataKey="balance" stroke="#c0c1ff" strokeWidth={2} fill="url(#scenFill)" isAnimationActive={false} />
+                {hasActuals && (
+                  <Legend
+                    iconType="plainline"
+                    wrapperStyle={{ paddingTop: 4, fontSize: 11 }}
+                    formatter={(v) => (v === 'actual' ? 'Actual (observed)' : 'Projected')}
+                  />
+                )}
+                <Area type="monotone" dataKey="balance" name="balance" stroke="#c0c1ff" strokeWidth={2} fill="url(#scenFill)" isAnimationActive={false} />
+                {showActuals && hasActuals && (
+                  <Line type="monotone" dataKey="actual" name="actual" stroke="#4edea3" strokeWidth={2} strokeDasharray="4 3" dot={{ r: 2 }} connectNulls isAnimationActive={false} />
+                )}
                 {events.filter((e) => e.enabled).map((e) => {
                   const point = proj.projection.aggregate.find((p) => p.date >= e.date);
                   if (!point) return null;
@@ -240,7 +343,7 @@ export function ScenarioDetail() {
               </div>
               <button
                 type="button"
-                onClick={() => { setEditingBucket(b); setBucketEditorOpen(true); setParams({ bucket: String(b.id) }); }}
+                onClick={() => { setEditingBucket(b); setBucketEditorOpen(true); }}
                 className="flex-1 min-w-0 text-left"
               >
                 <div className="flex justify-between items-baseline gap-2">
@@ -312,6 +415,7 @@ export function ScenarioDetail() {
                           {e.recurring ? (
                             <>
                               Every {e.cadence}
+                              {e.end_date ? ` · until ${formatDate(e.end_date)}` : ' · ongoing'}
                               {e.escalation_rate ? ` · +${(e.escalation_rate * 100).toFixed(1)}%/yr` : ''}
                             </>
                           ) : 'One-off'}
@@ -349,9 +453,9 @@ export function ScenarioDetail() {
         <BucketEditor
           scenarioId={scenario.id}
           bucket={editingBucket}
-          onClose={() => { setBucketEditorOpen(false); setEditingBucket(null); setParams({}); }}
-          onSaved={() => { setBucketEditorOpen(false); setEditingBucket(null); setParams({}); reload(); }}
-          onDelete={editingBucket ? () => { onDeleteBucket(editingBucket); setBucketEditorOpen(false); setEditingBucket(null); setParams({}); } : undefined}
+          onClose={() => { setBucketEditorOpen(false); setEditingBucket(null); }}
+          onSaved={() => { setBucketEditorOpen(false); setEditingBucket(null); reload(); }}
+          onDelete={editingBucket ? () => { onDeleteBucket(editingBucket); setBucketEditorOpen(false); setEditingBucket(null); } : undefined}
         />
       )}
 

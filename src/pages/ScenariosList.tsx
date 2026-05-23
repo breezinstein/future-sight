@@ -126,10 +126,18 @@ export function ScenariosList() {
             const isSel = selected.has(s.id);
             const sparkData = proj?.projection.aggregate.filter((_, i) => i % 12 === 0) ?? [];
             const final = proj?.projection.aggregate.at(-1)?.balance ?? 0;
+            const goToDetail = () => navigate(`/scenarios/${s.id}`);
             return (
-              <div key={s.id} className={`fs-card p-4 flex flex-col gap-3 transition-colors ${isSel ? 'border-primary' : ''}`}>
+              <div
+                key={s.id}
+                role="link"
+                tabIndex={0}
+                onClick={goToDetail}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goToDetail(); } }}
+                className={`fs-card p-4 flex flex-col gap-3 transition-colors cursor-pointer hover:border-primary/40 ${isSel ? 'border-primary' : ''}`}
+              >
                 <div className="flex items-start justify-between gap-2">
-                  <Link to={`/scenarios/${s.id}`} className="min-w-0 flex-1">
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <h3 className="text-base font-semibold text-on-surface truncate">{s.name}</h3>
                       {s.is_base ? (
@@ -139,8 +147,11 @@ export function ScenariosList() {
                       ) : null}
                     </div>
                     {s.description && <p className="text-xs text-on-surface-variant line-clamp-2">{s.description}</p>}
-                  </Link>
-                  <label className="inline-flex items-center gap-1 cursor-pointer text-on-surface-variant hover:text-on-surface">
+                  </div>
+                  <label
+                    className="inline-flex items-center gap-1 cursor-pointer text-on-surface-variant hover:text-on-surface"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <input
                       type="checkbox"
                       className="accent-inverse-primary"
@@ -167,7 +178,10 @@ export function ScenariosList() {
                   <span>Updated {formatDate(s.updated_at)}</span>
                 </div>
 
-                <div className="flex items-center gap-1 mt-1 pt-2 border-t border-surface-container">
+                <div
+                  className="flex items-center gap-1 mt-1 pt-2 border-t border-surface-container"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <Link to={`/scenarios/${s.id}`} className="fs-btn fs-btn-ghost flex-1 justify-center text-xs">Open</Link>
                   {!s.is_base && (
                     <button type="button" onClick={() => onSetBase(s)} className="fs-btn fs-btn-ghost text-xs" title="Set as base scenario">

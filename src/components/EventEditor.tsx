@@ -174,21 +174,29 @@ export function EventEditor({ scenarioId, buckets, event, onClose, onSaved }: Pr
               rate_change is "from this date forward" — it doesn't repeat. */}
           {(type === 'deposit' || type === 'withdrawal') && (
             <div className="col-span-2 flex flex-col gap-3">
-              <div className="flex items-center gap-3">
-                <label className="inline-flex items-center gap-2 cursor-pointer">
+              <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                <label className="inline-flex items-center gap-2 cursor-pointer sm:pb-2">
                   <input type="checkbox" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} className="accent-inverse-primary" />
                   <span className="text-sm text-on-surface">Recurring</span>
                 </label>
                 {recurring && (
                   <>
-                    <select className="fs-input flex-1" value={cadence} onChange={(e) => setCadence(e.target.value as Cadence)}>
-                      <option value="monthly">Monthly</option>
-                      <option value="quarterly">Quarterly (every 3 months)</option>
-                      <option value="semi_annual">Semi-annually (every 6 months)</option>
-                      <option value="annual">Annually</option>
-                      <option value="biennial">Biennially (every 2 years)</option>
-                    </select>
-                    <input type="date" className="fs-input flex-1" placeholder="End date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                    <div className="flex-1">
+                      <label className="fs-label" htmlFor="event-cadence">Frequency</label>
+                      <select id="event-cadence" className="fs-input mt-1" value={cadence} onChange={(e) => setCadence(e.target.value as Cadence)}>
+                        <option value="monthly">Monthly</option>
+                        <option value="quarterly">Quarterly (every 3 months)</option>
+                        <option value="semi_annual">Semi-annually (every 6 months)</option>
+                        <option value="annual">Annually</option>
+                        <option value="biennial">Biennially (every 2 years)</option>
+                      </select>
+                    </div>
+                    <div className="flex-1">
+                      <label className="fs-label" htmlFor="event-end">
+                        End date <span className="text-on-surface-variant normal-case tracking-normal">(optional — leave blank for ongoing)</span>
+                      </label>
+                      <input id="event-end" type="date" className="fs-input mt-1" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                    </div>
                   </>
                 )}
               </div>

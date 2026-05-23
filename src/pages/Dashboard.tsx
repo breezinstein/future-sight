@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { TrendingUp, TrendingDown, Wallet, Star, GitCompareArrows, Plus } from 'lucide-react';
+import { TrendingUp, TrendingDown, Wallet, Star, GitCompareArrows, Plus, Eye, EyeOff } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend, ReferenceLine,
 } from 'recharts';
@@ -10,6 +10,7 @@ import type { ProjectionResponse, Scenario, Actual, PlanMember } from '@/types';
 import { FullPageSpinner } from '@/components/Spinner';
 import { StatCard } from '@/components/StatCard';
 import { BucketIcon } from '@/components/BucketIcon';
+import { InfoTip } from '@/components/InfoTip';
 import { formatCompactCurrency, formatCurrency, formatDate, formatYearMonth } from '@/lib/format';
 
 // Distinct colours for up to 8 scenarios. After that we cycle.
@@ -25,6 +26,7 @@ export function Dashboard() {
   const { state } = useAuth();
   const [members, setMembers] = useState<PlanMember[]>([]);
   const [bundles, setBundles] = useState<ScenarioBundle[] | null>(null);
+  const [enabledIds, setEnabledIds] = useState<Set<number> | null>(null);
 
   if (state.status !== 'authenticated') throw new Error('unreachable');
   const planId = state.activePlanId;
@@ -55,84 +57,114 @@ export function Dashboard() {
       );
       if (cancelled) return;
       setBundles(result);
+      setEnabledIds((prev) => prev ?? new Set(result.map((b) => b.scenario.id)));
     })();
     return () => { cancelled = true; };
   }, [planId]);
 
-  // Build the multi-scenario overlay chart data. Each row holds one date and
-  // a column per scenario id.
-  const overlayData = useMemo(() => {
-    if (!bundles?.length) return [];
-    const dateSet = new Set<string>();
+  const enabledBundles = useMemo(
+    () => (bundles ?? []).filter((b) => !enabledIds || enabledIds.has(b.scenario.id)),
+    [bundles, enabledIds],
+  );
+
+  function toggleScenario(id: number) {
+    setEnabledIds((prev) => {
+      const next = new Set(prev ?? []);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  // Per-scenario current value (today): use latest actual-at-or-before-today
+  // per bucket, falling back to projected starting balance.
+  const currentByScenario = useMemo(() => {
+    const map = new Map<number, number>();
+    if (!bundles) return map;
+    const today = new Date().toISOString().slice(0, 10);
     for (const b of bundles) {
+      let sum = 0;
+      for (const bucket of b.projection.projection.buckets) {
+        const fx = bucket.currency === baseCurrency
+          ? 1
+          : (b.projection.projection.fxRates?.[bucket.currency] ?? 1);
+        const list = [...(b.actuals[bucket.bucketId] ?? [])].sort((x, y) => x.date.localeCompare(y.date));
+        let latest: Actual | null = null;
+        for (const a of list) {
+          if (a.date <= today) latest = a;
+          else break;
+        }
+        sum += (latest ? latest.balance : (bucket.series[0]?.balance ?? 0)) * fx;
+      }
+      map.set(b.scenario.id, sum);
+    }
+    return map;
+  }, [bundles, baseCurrency]);
+
+  // Build the multi-scenario overlay chart data + a cumulative "all enabled"
+  // line. Each row holds one date, a column per scenario id, and `total`.
+  const overlayData = useMemo(() => {
+    if (!enabledBundles.length) return [];
+    const dateSet = new Set<string>();
+    for (const b of enabledBundles) {
       for (const p of b.projection.projection.aggregate) dateSet.add(p.date);
     }
     const dates = [...dateSet].sort();
     const byScenario: Record<number, Map<string, number>> = {};
-    for (const b of bundles) {
+    for (const b of enabledBundles) {
       byScenario[b.scenario.id] = new Map(b.projection.projection.aggregate.map((p) => [p.date, p.balance]));
     }
     return dates.map((date) => {
       const row: Record<string, string | number | null> = { date };
-      for (const b of bundles) {
-        row[`s${b.scenario.id}`] = byScenario[b.scenario.id].get(date) ?? null;
+      let total = 0;
+      let anyValue = false;
+      for (const b of enabledBundles) {
+        const v = byScenario[b.scenario.id].get(date) ?? null;
+        row[`s${b.scenario.id}`] = v;
+        if (v != null) { total += v; anyValue = true; }
       }
+      row.total = anyValue ? total : null;
       return row;
     });
-  }, [bundles]);
+  }, [enabledBundles]);
 
-  // Aggregated current net worth from the base scenario, using actuals where
-  // available (same logic as before, but only on the base scenario).
-  const heroBundle = useMemo(
-    () => bundles?.find((b) => b.scenario.is_base) ?? bundles?.[0] ?? null,
-    [bundles],
-  );
-
+  // Cumulative current net worth across all enabled scenarios.
   const heroValue = useMemo(() => {
-    if (!heroBundle) return 0;
-    const today = new Date().toISOString().slice(0, 10);
-    // Latest actual-at-or-before-today across all enabled buckets in base
     let sum = 0;
-    let anyActual = false;
-    for (const bucket of heroBundle.projection.projection.buckets) {
-      const fx = bucket.currency === baseCurrency
-        ? 1
-        : (heroBundle.projection.projection.fxRates?.[bucket.currency] ?? 1);
-      const list = heroBundle.actuals[bucket.bucketId] || [];
-      let latest = null;
-      for (const a of [...list].sort((x, y) => x.date.localeCompare(y.date))) {
-        if (a.date <= today) latest = a;
-        else break;
-      }
-      if (latest) { sum += latest.balance * fx; anyActual = true; }
-      else { sum += (bucket.series[0]?.balance ?? 0) * fx; }
-    }
-    if (anyActual) return sum;
-    return heroBundle.projection.projection.aggregate[0]?.balance ?? 0;
-  }, [heroBundle, baseCurrency]);
+    for (const b of enabledBundles) sum += currentByScenario.get(b.scenario.id) ?? 0;
+    return sum;
+  }, [enabledBundles, currentByScenario]);
 
+  // 1-year projected change as a percentage of today's enabled total.
   const heroDelta = useMemo(() => {
-    if (!heroBundle) return null;
-    const agg = heroBundle.projection.projection.aggregate;
-    if (agg.length < 13) return null;
-    const start = agg[0];
-    const oneYear = agg[12];
-    if (start.balance <= 0) return null;
-    return (oneYear.balance - start.balance) / start.balance;
-  }, [heroBundle]);
+    if (!enabledBundles.length || heroValue <= 0) return null;
+    let oneYearTotal = 0;
+    let anyOneYear = false;
+    for (const b of enabledBundles) {
+      const agg = b.projection.projection.aggregate;
+      if (agg.length >= 13) { oneYearTotal += agg[12].balance; anyOneYear = true; }
+    }
+    if (!anyOneYear) return null;
+    return (oneYearTotal - heroValue) / heroValue;
+  }, [enabledBundles, heroValue]);
 
-  const ytdContributions = useMemo(() => {
-    if (!heroBundle) return 0;
-    const year = new Date().getFullYear();
+  // Forward-looking 12-month inflow: sum of monthly contributions over the
+  // next 12 projection months across all enabled scenarios, in base currency.
+  const forwardInflow12mo = useMemo(() => {
     let total = 0;
-    for (const b of heroBundle.projection.projection.buckets) {
-      const fx = b.currency === baseCurrency ? 1 : (heroBundle.projection.projection.fxRates?.[b.currency] ?? 1);
-      for (const p of b.series) {
-        if (Number(p.date.slice(0, 4)) === year) total += (p.contribution ?? 0) * fx;
+    const today = new Date().toISOString().slice(0, 7);
+    for (const b of enabledBundles) {
+      const fxRates = b.projection.projection.fxRates ?? {};
+      for (const bucket of b.projection.projection.buckets) {
+        const fx = bucket.currency === baseCurrency ? 1 : (fxRates[bucket.currency] ?? 1);
+        const futurePoints = bucket.series
+          .filter((p) => p.date.slice(0, 7) >= today)
+          .slice(0, 12);
+        for (const p of futurePoints) total += (p.contribution ?? 0) * fx;
       }
     }
     return total;
-  }, [heroBundle, baseCurrency]);
+  }, [enabledBundles, baseCurrency]);
 
   if (!bundles) return <FullPageSpinner />;
 
@@ -147,19 +179,28 @@ export function Dashboard() {
     );
   }
 
-  const baseScenario = heroBundle?.scenario;
+  const baseScenario = bundles.find((b) => b.scenario.is_base)?.scenario ?? bundles[0]?.scenario;
+  const heroBundle = bundles.find((b) => b.scenario.is_base) ?? bundles[0] ?? null;
   const topMilestones = heroBundle?.projection.milestones.slice(0, 4) ?? [];
 
   // X-axis tick that shows the current year as a vertical reference.
   const today = new Date().toISOString().slice(0, 10);
   const todayInRange = overlayData.find((p) => String(p.date) >= today);
+  const enabledCount = enabledBundles.length;
 
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="fs-label mb-1">Household overview</h1>
+          <h1 className="fs-label mb-1 inline-flex items-center">
+            Household net worth
+            <InfoTip label="household net worth">
+              Sum of today's balance across <em>enabled</em> scenarios (toggle them below). For
+              each bucket we use the most recent observed actual; if no actual exists, the
+              projected starting balance. All amounts converted to {baseCurrency}.
+            </InfoTip>
+          </h1>
           <div className="flex items-baseline gap-3 flex-wrap">
             <span className="text-4xl md:text-5xl font-bold text-on-surface tabular tracking-tight">
               {formatCurrency(heroValue, baseCurrency, { maximumFractionDigits: 0 })}
@@ -174,8 +215,7 @@ export function Dashboard() {
             )}
           </div>
           <p className="text-xs text-on-surface-variant mt-1">
-            Net worth uses observed actuals from the base scenario ({baseScenario?.name ?? '—'}); other figures below
-            cover all {bundles.length} scenario{bundles.length === 1 ? '' : 's'}.
+            {enabledCount} of {bundles.length} scenario{bundles.length === 1 ? '' : 's'} included. Toggle individual scenarios below to recompute.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -190,11 +230,47 @@ export function Dashboard() {
         </div>
       </header>
 
-      {/* Overlay chart: all scenarios in one view */}
+      {/* Scenario toggle chips */}
+      <section className="flex flex-wrap gap-2">
+        {bundles.map((b, idx) => {
+          const on = !enabledIds || enabledIds.has(b.scenario.id);
+          return (
+            <button
+              key={b.scenario.id}
+              type="button"
+              onClick={() => toggleScenario(b.scenario.id)}
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs border transition-colors ${
+                on
+                  ? 'bg-surface-container-high border-surface-container-highest text-on-surface'
+                  : 'bg-transparent border-surface-container text-on-surface-variant hover:text-on-surface'
+              }`}
+              title={on ? 'Click to exclude from totals' : 'Click to include in totals'}
+            >
+              <span className="w-2.5 h-2.5 rounded-sm" style={{ background: on ? SCENARIO_COLORS[idx % SCENARIO_COLORS.length] : '#3a3a3a' }} />
+              {b.scenario.is_base ? <Star size={10} className="text-primary" /> : null}
+              <span>{b.scenario.name}</span>
+              <span className="tabular text-on-surface-variant">
+                {formatCompactCurrency(currentByScenario.get(b.scenario.id) ?? 0, baseCurrency)}
+              </span>
+              {on ? <Eye size={11} /> : <EyeOff size={11} />}
+            </button>
+          );
+        })}
+      </section>
+
+      {/* Overlay chart: all enabled scenarios + cumulative total */}
       <section className="fs-card p-4 h-[440px] flex flex-col">
         <div className="flex justify-between items-baseline gap-3 flex-wrap mb-3">
           <div>
-            <h2 className="fs-label">Net worth across {bundles.length} scenario{bundles.length === 1 ? '' : 's'}</h2>
+            <h2 className="fs-label inline-flex items-center">
+              Net worth across {enabledCount} scenario{enabledCount === 1 ? '' : 's'}
+              <InfoTip label="projection">
+                A <em>projection</em> is the modelled future balance of a bucket or scenario,
+                computed month-by-month from its starting balance, expected return rate,
+                compounding frequency, and any timeline events. The bold line is the
+                cumulative sum across all enabled scenarios.
+              </InfoTip>
+            </h2>
             <p className="text-xs text-on-surface-variant mt-0.5 tabular">
               All projections in {baseCurrency}; today marked with a vertical line.
             </p>
@@ -208,69 +284,93 @@ export function Dashboard() {
           </div>
         </div>
         <div className="flex-1 min-h-0">
-          <ResponsiveContainer>
-            <LineChart data={overlayData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-              <CartesianGrid stroke="#2a2a2a" vertical={false} />
-              <XAxis dataKey="date" tickFormatter={(d) => new Date(d as string).getFullYear().toString()} stroke="#908fa0" fontSize={11} minTickGap={50} />
-              <YAxis tickFormatter={(v) => formatCompactCurrency(v as number, baseCurrency)} stroke="#908fa0" fontSize={11} width={60} />
-              <Tooltip
-                contentStyle={{ background: '#201f1f', border: '1px solid #2a2a2a', borderRadius: 4, fontSize: 12 }}
-                labelFormatter={(l) => formatDate(l as string)}
-                formatter={(value, name) => {
-                  const sid = Number(String(name).replace('s', ''));
-                  const b = bundles.find((x) => x.scenario.id === sid);
-                  return [formatCurrency(value as number, baseCurrency, { maximumFractionDigits: 0 }), b?.scenario.name ?? name];
-                }}
-              />
-              <Legend
-                formatter={(v) => {
-                  const sid = Number(String(v).replace('s', ''));
-                  const b = bundles.find((x) => x.scenario.id === sid);
-                  return (b?.scenario.is_base ? '★ ' : '') + (b?.scenario.name ?? v);
-                }}
-                iconType="plainline"
-                wrapperStyle={{ paddingTop: 8, fontSize: 12 }}
-              />
-              {todayInRange && (
-                <ReferenceLine x={todayInRange.date as string} stroke="#464554" strokeDasharray="3 3" label={{ value: 'today', position: 'top', fill: '#908fa0', fontSize: 10 }} />
-              )}
-              {bundles.map((b, idx) => (
-                <Line
-                  key={b.scenario.id}
-                  type="monotone"
-                  dataKey={`s${b.scenario.id}`}
-                  stroke={SCENARIO_COLORS[idx % SCENARIO_COLORS.length]}
-                  strokeWidth={b.scenario.is_base ? 2.5 : 2}
-                  dot={false}
-                  connectNulls
-                  isAnimationActive={false}
+          {enabledCount === 0 ? (
+            <div className="h-full flex items-center justify-center text-on-surface-variant text-sm">
+              No scenarios selected. Toggle one above to see the chart.
+            </div>
+          ) : (
+            <ResponsiveContainer>
+              <LineChart data={overlayData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                <CartesianGrid stroke="#2a2a2a" vertical={false} />
+                <XAxis dataKey="date" tickFormatter={(d) => new Date(d as string).getFullYear().toString()} stroke="#908fa0" fontSize={11} minTickGap={50} />
+                <YAxis tickFormatter={(v) => formatCompactCurrency(v as number, baseCurrency)} stroke="#908fa0" fontSize={11} width={60} />
+                <Tooltip
+                  contentStyle={{ background: '#201f1f', border: '1px solid #2a2a2a', borderRadius: 4, fontSize: 12 }}
+                  labelFormatter={(l) => formatDate(l as string)}
+                  formatter={(value, name) => {
+                    if (name === 'total') return [formatCurrency(value as number, baseCurrency, { maximumFractionDigits: 0 }), 'Cumulative'];
+                    const sid = Number(String(name).replace('s', ''));
+                    const b = bundles.find((x) => x.scenario.id === sid);
+                    return [formatCurrency(value as number, baseCurrency, { maximumFractionDigits: 0 }), b?.scenario.name ?? name];
+                  }}
                 />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
+                <Legend
+                  formatter={(v) => {
+                    if (v === 'total') return 'Cumulative (enabled)';
+                    const sid = Number(String(v).replace('s', ''));
+                    const b = bundles.find((x) => x.scenario.id === sid);
+                    return (b?.scenario.is_base ? '★ ' : '') + (b?.scenario.name ?? v);
+                  }}
+                  iconType="plainline"
+                  wrapperStyle={{ paddingTop: 8, fontSize: 12 }}
+                />
+                {todayInRange && (
+                  <ReferenceLine x={todayInRange.date as string} stroke="#464554" strokeDasharray="3 3" label={{ value: 'today', position: 'top', fill: '#908fa0', fontSize: 10 }} />
+                )}
+                {enabledBundles.map((b) => {
+                  const idx = bundles.findIndex((x) => x.scenario.id === b.scenario.id);
+                  return (
+                    <Line
+                      key={b.scenario.id}
+                      type="monotone"
+                      dataKey={`s${b.scenario.id}`}
+                      stroke={SCENARIO_COLORS[idx % SCENARIO_COLORS.length]}
+                      strokeWidth={b.scenario.is_base ? 2 : 1.5}
+                      strokeOpacity={0.7}
+                      dot={false}
+                      connectNulls
+                      isAnimationActive={false}
+                    />
+                  );
+                })}
+                {enabledCount >= 2 && (
+                  <Line
+                    type="monotone"
+                    dataKey="total"
+                    stroke="#ffffff"
+                    strokeWidth={3}
+                    dot={false}
+                    connectNulls
+                    isAnimationActive={false}
+                  />
+                )}
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </section>
 
-      {/* Quick stats from the base scenario */}
+      {/* Quick stats across enabled scenarios */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
-          label="YTD Contributions (base)"
-          value={formatCurrency(ytdContributions, baseCurrency, { maximumFractionDigits: 0 })}
+          label="Next 12 mo inflow"
+          value={formatCurrency(forwardInflow12mo, baseCurrency, { maximumFractionDigits: 0 })}
           status="on_track"
+          hint={`Sum of projected contributions across ${enabledCount} enabled scenario${enabledCount === 1 ? '' : 's'}`}
         />
         <StatCard
-          label="Scenarios tracked"
-          value={String(bundles.length)}
-          hint={`${bundles.filter((b) => !b.scenario.is_base).length} non-base`}
+          label="Scenarios enabled"
+          value={`${enabledCount} / ${bundles.length}`}
+          hint={`${bundles.filter((b) => !b.scenario.is_base).length} non-base total`}
         />
         <StatCard
           label="Milestones on track"
           value={(() => {
-            const all = bundles.flatMap((b) => b.projection.milestones);
+            const all = enabledBundles.flatMap((b) => b.projection.milestones);
             const onTrack = all.filter((m) => m.status === 'on_track').length;
             return `${onTrack} / ${all.length}`;
           })()}
-          hint="across all scenarios"
+          hint="across enabled scenarios"
         />
       </div>
 
