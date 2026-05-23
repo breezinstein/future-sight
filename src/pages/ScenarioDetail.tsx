@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, Copy, Plus, Trash2, Edit3, Settings as SettingsIcon, Star } from 'lucide-react';
 import {
-  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot, Line, Legend,
+  ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot, Legend,
 } from 'recharts';
 import { scenarios as scenariosApi, buckets as bucketsApi, events as eventsApi } from '@/api';
 import type { Actual, Bucket, PlanEvent, ProjectionResponse, Scenario } from '@/types';
@@ -281,7 +281,7 @@ export function ScenarioDetail() {
           </div>
           <div className="flex-1 min-h-0">
             <ResponsiveContainer>
-              <AreaChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+              <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="scenFill" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#c0c1ff" stopOpacity={0.3} />
@@ -318,7 +318,7 @@ export function ScenarioDetail() {
                                 '#c0c1ff';
                   return <ReferenceDot key={e.id} x={point.date} y={point.balance} r={5} fill={color} stroke="#131313" strokeWidth={2} />;
                 })}
-              </AreaChart>
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
         </div>

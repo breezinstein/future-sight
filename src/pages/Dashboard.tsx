@@ -179,10 +179,6 @@ export function Dashboard() {
     );
   }
 
-  const baseScenario = bundles.find((b) => b.scenario.is_base)?.scenario ?? bundles[0]?.scenario;
-  const heroBundle = bundles.find((b) => b.scenario.is_base) ?? bundles[0] ?? null;
-  const topMilestones = heroBundle?.projection.milestones.slice(0, 4) ?? [];
-
   // X-axis tick that shows the current year as a vertical reference.
   const today = new Date().toISOString().slice(0, 10);
   const todayInRange = overlayData.find((p) => String(p.date) >= today);
@@ -415,66 +411,88 @@ export function Dashboard() {
         </div>
       </section>
 
-      {/* Milestones from the base scenario */}
+      {/* Milestones across enabled scenarios */}
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <h2 className="fs-label">Active milestones ({baseScenario?.name ?? 'base'})</h2>
-          <Link to={`/scenarios/${baseScenario?.id ?? ''}`} className="text-xs text-primary hover:underline uppercase tracking-wide">Open base</Link>
+          <h2 className="fs-label inline-flex items-center">
+            Active milestones
+            <InfoTip label="milestones">
+              Bucket goals (target amount + target date) across all enabled scenarios.
+              Status reflects whether the projected balance hits the target on time.
+            </InfoTip>
+          </h2>
+          <span className="text-xs text-on-surface-variant">{enabledCount} scenario{enabledCount === 1 ? '' : 's'}</span>
         </div>
-        {topMilestones.length === 0 ? (
-          <div className="fs-card p-8 text-center text-on-surface-variant text-sm">
-            No milestones yet. Add a target amount and date to a bucket to track progress here.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 @4xl:grid-cols-4 gap-3">
-            {topMilestones.map((m) => (
-              <MilestoneCard key={m.bucketId} m={m} currency={baseCurrency} />
-            ))}
-          </div>
-        )}
+        {(() => {
+          const all = enabledBundles.flatMap((b) =>
+            b.projection.milestones.map((m) => ({ ...m, scenarioId: b.scenario.id, scenarioName: b.scenario.name })),
+          );
+          const top = all.slice(0, 8);
+          return top.length === 0 ? (
+            <div className="fs-card p-8 text-center text-on-surface-variant text-sm">
+              No milestones yet. Add a target amount and date to a bucket to track progress here.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 @4xl:grid-cols-4 gap-3">
+              {top.map((m) => (
+                <MilestoneCard key={`${m.scenarioId}-${m.bucketId}`} m={m} scenarioName={m.scenarioName} currency={baseCurrency} />
+              ))}
+            </div>
+          );
+        })()}
       </section>
 
-      {/* Bucket glance — base scenario only */}
-      {heroBundle && (
+      {/* Buckets across enabled scenarios */}
+      {enabledBundles.length > 0 && (
         <section className="flex flex-col gap-3">
           <div className="flex items-center justify-between">
-            <h2 className="fs-label">Buckets in {baseScenario?.name ?? 'base'}</h2>
-            <Link to={`/scenarios/${baseScenario?.id ?? ''}`} className="text-xs text-primary hover:underline uppercase tracking-wide">Open scenario</Link>
+            <h2 className="fs-label">Buckets across enabled scenarios</h2>
+            <Link to="/buckets" className="text-xs text-primary hover:underline uppercase tracking-wide">Manage buckets</Link>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 @4xl:grid-cols-3 gap-3">
-            {heroBundle.projection.projection.buckets.length === 0 ? (
-              <div className="fs-card p-6 col-span-full text-center text-on-surface-variant text-sm border-dashed">
-                <Wallet size={20} className="mx-auto mb-2" /> No buckets in this scenario yet.
-              </div>
-            ) : heroBundle.projection.projection.buckets.map((b) => {
-              const current = b.series[0]?.balance ?? 0;
-              const final = b.series.at(-1)?.balance ?? 0;
-              return (
-                <Link key={b.bucketId} to={`/scenarios/${baseScenario?.id ?? ''}?bucket=${b.bucketId}`} className="fs-card p-4 hover:border-primary/40 transition-colors">
-                  <div className="flex items-start gap-3 mb-3">
-                    <div className="w-9 h-9 rounded bg-surface-container flex items-center justify-center text-primary">
-                      <BucketIcon name={b.icon} />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-on-surface truncate">{b.name}</div>
-                      <div className="text-xs text-on-surface-variant truncate">{b.category || b.currency}</div>
-                    </div>
-                  </div>
-                  <div className="tabular text-lg text-on-surface">{formatCurrency(current, b.currency, { maximumFractionDigits: 0 })}</div>
-                  <div className="text-xs text-on-surface-variant mt-1">
-                    Projected to {formatCompactCurrency(final, b.currency)} by {formatYearMonth(b.series.at(-1)?.date)}
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
+          {enabledBundles.every((b) => b.projection.projection.buckets.length === 0) ? (
+            <div className="fs-card p-6 text-center text-on-surface-variant text-sm border-dashed">
+              <Wallet size={20} className="mx-auto mb-2" /> No buckets in any enabled scenario yet.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 @4xl:grid-cols-3 gap-3">
+              {enabledBundles.flatMap((b) =>
+                b.projection.projection.buckets.map((bucket) => {
+                  const current = bucket.series[0]?.balance ?? 0;
+                  const final = bucket.series.at(-1)?.balance ?? 0;
+                  return (
+                    <Link
+                      key={`${b.scenario.id}-${bucket.bucketId}`}
+                      to={`/scenarios/${b.scenario.id}?bucket=${bucket.bucketId}`}
+                      className="fs-card p-4 hover:border-primary/40 transition-colors"
+                    >
+                      <div className="flex items-start gap-3 mb-3">
+                        <div className="w-9 h-9 rounded bg-surface-container flex items-center justify-center text-primary">
+                          <BucketIcon name={bucket.icon} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-on-surface truncate">{bucket.name}</div>
+                          <div className="text-xs text-on-surface-variant truncate">
+                            {b.scenario.name}{b.scenario.is_base ? ' ★' : ''} · {bucket.category || bucket.currency}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="tabular text-lg text-on-surface">{formatCurrency(current, bucket.currency, { maximumFractionDigits: 0 })}</div>
+                      <div className="text-xs text-on-surface-variant mt-1">
+                        Projected to {formatCompactCurrency(final, bucket.currency)} by {formatYearMonth(bucket.series.at(-1)?.date)}
+                      </div>
+                    </Link>
+                  );
+                }),
+              )}
+            </div>
+          )}
         </section>
       )}
     </div>
   );
 }
 
-function MilestoneCard({ m, currency }: { m: ProjectionResponse['milestones'][number]; currency: string }) {
+function MilestoneCard({ m, currency, scenarioName }: { m: ProjectionResponse['milestones'][number]; currency: string; scenarioName?: string }) {
   const pct = m.targetAmount > 0 ? Math.min(100, (m.currentBalance / m.targetAmount) * 100) : 0;
   const statusColor =
     m.status === 'on_track' ? 'bg-secondary' :
@@ -490,6 +508,9 @@ function MilestoneCard({ m, currency }: { m: ProjectionResponse['milestones'][nu
           <div className={`fs-status-dot ${statusColor}`} title={m.status} />
         </div>
         <div className="fs-label">{m.name}</div>
+        {scenarioName && (
+          <div className="text-[11px] text-on-surface-variant truncate">{scenarioName}</div>
+        )}
         <div className="text-lg font-semibold text-on-surface mt-1 tabular">
           {m.targetDate ? formatYearMonth(m.targetDate) : 'No deadline'}
         </div>

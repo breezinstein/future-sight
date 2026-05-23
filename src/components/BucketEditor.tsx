@@ -8,6 +8,7 @@ import { BucketIcon, ICON_NAMES } from './BucketIcon';
 import { Spinner } from './Spinner';
 import { BucketCopyModal } from './BucketCopyModal';
 import { CurrencyInput } from './CurrencyInput';
+import { InfoTip } from './InfoTip';
 import { useToast } from '@/context/ToastContext';
 import { useAuth } from '@/context/AuthContext';
 import { todayIso, formatCurrency, formatDate, formatPercent, sortCurrencies } from '@/lib/format';
@@ -69,8 +70,7 @@ export function BucketEditor({ scenarioId, bucket, onClose, onSaved, onDelete }:
       .finally(() => setLoadingDetail(false));
   }, [bucket]);
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
+  async function save() {
     setSubmitting(true);
     try {
       const payload = {
@@ -97,6 +97,11 @@ export function BucketEditor({ scenarioId, bucket, onClose, onSaved, onDelete }:
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    await save();
   }
 
   // Actual add form
@@ -133,7 +138,7 @@ export function BucketEditor({ scenarioId, bucket, onClose, onSaved, onDelete }:
             </button>
           )}
           <button type="button" onClick={onClose} className="fs-btn fs-btn-ghost">Cancel</button>
-          <button type="submit" form="bucket-form" disabled={submitting} className="fs-btn fs-btn-primary">
+          <button type="button" onClick={save} disabled={submitting || !name} className="fs-btn fs-btn-primary">
             {submitting ? <Spinner /> : bucket ? 'Save changes' : 'Create bucket'}
           </button>
         </>
@@ -187,7 +192,14 @@ export function BucketEditor({ scenarioId, bucket, onClose, onSaved, onDelete }:
               />
             </div>
             <div>
-              <label className="fs-label" htmlFor="return">Expected return % (APR)</label>
+              <label className="fs-label inline-flex items-center" htmlFor="return">
+                Expected return % (APR)
+                <InfoTip label="APR">
+                  Annual Percentage Rate — the yearly nominal interest rate. With monthly
+                  compounding the effective yield is slightly higher than APR; with annual
+                  compounding it equals APR exactly.
+                </InfoTip>
+              </label>
               <input id="return" type="number" step="0.1" className="fs-input mt-1 tabular" value={expectedReturn} onChange={(e) => setExpectedReturn(Number(e.target.value))} />
               {compounding === 'monthly' && expectedReturn > 0 && (
                 <p className="text-xs text-on-surface-variant mt-1">
@@ -201,14 +213,28 @@ export function BucketEditor({ scenarioId, bucket, onClose, onSaved, onDelete }:
               )}
             </div>
             <div>
-              <label className="fs-label" htmlFor="compounding">Compounding</label>
+              <label className="fs-label inline-flex items-center" htmlFor="compounding">
+                Compounding
+                <InfoTip label="compounding">
+                  How often returns are added to the balance. Monthly applies APR/12 each
+                  month (smooth growth). Annual applies the full APR once per year (stepped
+                  growth) — best for fixed-term deposits or savings bonds.
+                </InfoTip>
+              </label>
               <select id="compounding" className="fs-input mt-1" value={compounding} onChange={(e) => setCompounding(e.target.value as 'monthly' | 'annual')}>
                 <option value="monthly">Monthly</option>
                 <option value="annual">Annual</option>
               </select>
             </div>
             <div>
-              <label className="fs-label" htmlFor="targetAmount">Target amount (optional)</label>
+              <label className="fs-label inline-flex items-center" htmlFor="targetAmount">
+                Target amount (optional)
+                <InfoTip label="target">
+                  Set a goal amount and date to track this bucket as a milestone on the
+                  Dashboard. Status (on track / drifting / behind) is derived by comparing
+                  the projection against the target.
+                </InfoTip>
+              </label>
               <CurrencyInput
                 id="targetAmount"
                 className="fs-input mt-1"
@@ -248,8 +274,13 @@ export function BucketEditor({ scenarioId, bucket, onClose, onSaved, onDelete }:
 
       {tab === 'actuals' && bucket && (
         <div className="flex flex-col gap-4">
-          <p className="text-sm text-on-surface-variant">
-            Record observed balances over time. We compare these against the projection to track drift.
+          <p className="text-sm text-on-surface-variant inline-flex items-center">
+            Record observed balances over time.
+            <InfoTip label="actuals">
+              Actuals are your real-world bucket balances at specific dates. We use them
+              to overlay reality on the projection, so you can see drift. Add them
+              manually here or import a CSV from the Actuals page.
+            </InfoTip>
           </p>
           <div className="grid grid-cols-12 gap-2 items-end">
             <div className="col-span-4">

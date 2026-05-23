@@ -4,6 +4,7 @@ import type { Bucket, PlanEvent, EventType, Cadence } from '@/types';
 import { Modal } from './Modal';
 import { Spinner } from './Spinner';
 import { CurrencyInput } from './CurrencyInput';
+import { InfoTip } from './InfoTip';
 import { useToast } from '@/context/ToastContext';
 import { todayIso } from '@/lib/format';
 
@@ -110,7 +111,15 @@ export function EventEditor({ scenarioId, buckets, event, onClose, onSaved }: Pr
       <form id="event-form" onSubmit={onSubmit} className="flex flex-col gap-4">
         {/* Type tabs */}
         <div>
-          <label className="fs-label">Event type</label>
+          <label className="fs-label inline-flex items-center">
+            Event type
+            <InfoTip label="event types">
+              <strong>Deposit</strong>: money in (salary, bonus, transfer). <br/>
+              <strong>Withdrawal</strong>: money out (retirement income, purchase). <br/>
+              <strong>Rate change</strong>: override the bucket's expected return from this
+              date forward (e.g. switching from a high-yield account to a CD).
+            </InfoTip>
+          </label>
           <div className="grid grid-cols-2 gap-2 mt-1">
             {(['deposit', 'withdrawal', 'rate_change'] as EventType[]).map((t) => (
               <button
@@ -203,8 +212,14 @@ export function EventEditor({ scenarioId, buckets, event, onClose, onSaved }: Pr
 
               {recurring && (
                 <div>
-                  <label className="fs-label" htmlFor="escalation">
+                  <label className="fs-label inline-flex items-center" htmlFor="escalation">
                     Annual escalation % <span className="text-on-surface-variant normal-case tracking-normal">(optional)</span>
+                    <InfoTip label="escalation">
+                      Each occurrence grows by this annual rate, so a recurring amount keeps
+                      pace with inflation or salary growth. 3% means a $1,000 monthly
+                      deposit becomes ~$1,030 after a year, ~$1,061 after two. Applied as
+                      APR — interpolated fractionally for sub-annual cadences.
+                    </InfoTip>
                   </label>
                   <input
                     id="escalation"
@@ -215,11 +230,6 @@ export function EventEditor({ scenarioId, buckets, event, onClose, onSaved }: Pr
                     value={escalationRate}
                     onChange={(e) => setEscalationRate(e.target.value === '' ? '' : Number(e.target.value))}
                   />
-                  <p className="text-xs text-on-surface-variant mt-1">
-                    Each occurrence's amount grows by this annual rate. 3% means a $1,000 withdrawal becomes
-                    $1,030 after a year, $1,061 after two, etc. Works with any cadence (we interpolate fractionally
-                    for monthly/quarterly).
-                  </p>
                 </div>
               )}
             </div>
