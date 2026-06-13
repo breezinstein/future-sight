@@ -63,7 +63,11 @@ export function ScenarioDetail() {
     setHasLoaded(true);
   }, [id]);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    // Deferred to a microtask so state updates run in a callback rather than
+    // synchronously in the effect body (avoids cascading renders).
+    Promise.resolve().then(reload);
+  }, [reload]);
 
   // Open bucket editor when ?bucket=ID arrives from an external link (e.g.
   // Dashboard bucket cards). We clear the param immediately so back-navigation
@@ -72,11 +76,14 @@ export function ScenarioDetail() {
     const bid = Number(params.get('bucket'));
     if (!bid || !buckets.length) return;
     const b = buckets.find((x) => x.id === bid);
-    if (b) {
+    if (!b) return;
+    // Defer the modal-open state updates to a microtask so they run in a
+    // callback rather than synchronously in the effect body.
+    queueMicrotask(() => {
       setEditingBucket(b);
       setBucketEditorOpen(true);
-      setParams({}, { replace: true });
-    }
+    });
+    setParams({}, { replace: true });
   }, [params, buckets, setParams]);
 
   // Aggregate per-bucket actuals into a single base-currency series matching
@@ -342,8 +349,8 @@ export function ScenarioDetail() {
                 <Tooltip
                   contentStyle={{ background: '#201f1f', border: '1px solid #2a2a2a', borderRadius: 4, fontSize: 12 }}
                   labelFormatter={(l) => formatDate(l as string)}
-                  formatter={(v: number, name) => [
-                    formatCurrency(v, baseCurrency, { maximumFractionDigits: 0 }),
+                  formatter={(v, name) => [
+                    formatCurrency(Number(v) || 0, baseCurrency, { maximumFractionDigits: 0 }),
                     name === 'actual' ? 'Actual' : 'Projected',
                   ]}
                 />

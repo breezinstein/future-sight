@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { events as eventsApi } from '@/api';
 import type { Bucket, PlanEvent, EventType, Cadence } from '@/types';
 import { Modal } from './Modal';
@@ -45,13 +45,16 @@ export function EventEditor({ scenarioId, buckets, event, onClose, onSaved }: Pr
   const [error, setError] = useState<string | null>(null);
 
   // Recurring is only meaningful for deposit/withdrawal. Clear it when the
-  // user switches type so a stale checkbox state can't slip into the payload.
-  useEffect(() => {
+  // user switches type (during render, not in an effect) so a stale checkbox
+  // state can't slip into the payload.
+  const [prevType, setPrevType] = useState(type);
+  if (type !== prevType) {
+    setPrevType(type);
     if (type !== 'deposit' && type !== 'withdrawal') {
       setRecurring(false);
       setEscalationRate('');
     }
-  }, [type]);
+  }
 
   // Show the selected bucket's currency on the amount input so it's obvious
   // that the value is in that currency, not the plan's base.

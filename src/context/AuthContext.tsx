@@ -37,7 +37,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    loadSession();
+    // Deferred to a microtask so the session-loading state updates happen in a
+    // callback rather than synchronously in the effect body.
+    Promise.resolve().then(loadSession);
   }, [loadSession]);
 
   const signIn = useCallback(async (email: string, password: string) => {

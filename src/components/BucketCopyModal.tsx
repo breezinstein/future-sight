@@ -31,14 +31,18 @@ export function BucketCopyModal({ bucket, currentScenarioId, planId, onClose, on
 
   // If the user picks the same scenario, suggest a "(copy)" suffix to avoid
   // identical sibling names — they're technically allowed but visually confusing.
+  // Computed during render (not in an effect) so it doesn't trigger an extra
+  // cascading render; only overrides the name while it still matches a default.
   const sameScenario = targetScenarioId === currentScenarioId;
-  useEffect(() => {
+  const [prevSameScenario, setPrevSameScenario] = useState(sameScenario);
+  if (sameScenario !== prevSameScenario) {
+    setPrevSameScenario(sameScenario);
     if (sameScenario && name === bucket.name) {
       setName(`${bucket.name} (copy)`);
     } else if (!sameScenario && name === `${bucket.name} (copy)`) {
       setName(bucket.name);
     }
-  }, [sameScenario, bucket.name]); // eslint-disable-line react-hooks/exhaustive-deps
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();

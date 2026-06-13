@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Trash2, Copy, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { buckets as bucketsApi, fx as fxApi } from '@/api';
@@ -60,15 +60,20 @@ export function BucketEditor({ scenarioId, bucket, onClose, onSaved, onDelete }:
       .catch(() => { /* keep fallback */ });
   }, []);
 
-  useEffect(() => {
+  const loadDetail = useCallback(async () => {
     if (!bucket) return;
     setLoadingDetail(true);
-    bucketsApi.get(bucket.id)
-      .then((b) => {
-        setActuals(b.actuals);
-      })
-      .finally(() => setLoadingDetail(false));
+    try {
+      const b = await bucketsApi.get(bucket.id);
+      setActuals(b.actuals);
+    } finally {
+      setLoadingDetail(false);
+    }
   }, [bucket]);
+
+  // Deferred to a microtask so state updates run in a callback rather than
+  // synchronously in the effect body (avoids cascading renders).
+  useEffect(() => { Promise.resolve().then(loadDetail); }, [loadDetail]);
 
   async function save() {
     setSubmitting(true);

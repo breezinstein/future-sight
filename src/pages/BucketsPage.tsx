@@ -32,7 +32,7 @@ export function BucketsPage() {
     setByScenario(result);
   }, [planId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { Promise.resolve().then(load); }, [load]);
 
   async function onDelete() {
     if (!editing?.bucket) return;

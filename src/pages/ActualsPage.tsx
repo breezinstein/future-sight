@@ -35,7 +35,7 @@ export function ActualsPage() {
     setRows(result);
   }, [planId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { Promise.resolve().then(load); }, [load]);
 
   async function doImport() {
     if (!importingFor || !csvText.trim()) return;

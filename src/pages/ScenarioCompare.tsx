@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { ChevronLeft } from 'lucide-react';
 import {
@@ -26,13 +26,19 @@ export function ScenarioCompare() {
   const [data, setData] = useState<CompareResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!planId || scenarioIds.length < 2) return;
     setLoading(true);
-    scenariosApi.compare(planId, scenarioIds, HORIZONS)
-      .then((d) => setData(d))
-      .finally(() => setLoading(false));
+    try {
+      setData(await scenariosApi.compare(planId, scenarioIds, HORIZONS));
+    } finally {
+      setLoading(false);
+    }
   }, [planId, scenarioIds]);
+
+  // Deferred to a microtask so state updates run in a callback rather than
+  // synchronously in the effect body (avoids cascading renders).
+  useEffect(() => { Promise.resolve().then(load); }, [load]);
 
   if (scenarioIds.length < 2) {
     return (
@@ -82,10 +88,10 @@ export function ScenarioCompare() {
               <Tooltip
                 contentStyle={{ background: '#201f1f', border: '1px solid #2a2a2a', borderRadius: 4, fontSize: 12 }}
                 labelFormatter={(l) => formatDate(l as string)}
-                formatter={(v: number, name: string) => {
-                  const sid = Number(name.replace('s', ''));
+                formatter={(v, name) => {
+                  const sid = Number(String(name).replace('s', ''));
                   const sc = data.scenarios.find((x) => x.scenario.id === sid);
-                  return [formatCurrency(v, data.baseCurrency, { maximumFractionDigits: 0 }), sc?.scenario.name ?? name];
+                  return [formatCurrency(Number(v) || 0, data.baseCurrency, { maximumFractionDigits: 0 }), sc?.scenario.name ?? name];
                 }}
               />
               <Legend

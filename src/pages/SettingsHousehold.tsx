@@ -27,7 +27,7 @@ export function SettingsHousehold() {
     setMembers(rows);
     setLoading(false);
   }, [planId]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { Promise.resolve().then(load); }, [load]);
 
   async function onAdd(e: FormEvent) {
     e.preventDefault();

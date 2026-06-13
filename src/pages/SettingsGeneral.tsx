@@ -24,10 +24,14 @@ export function SettingsGeneral() {
     fxApi.currencies().then((list) => setCurrencies(sortCurrencies(list))).catch(() => setCurrencies(['NGN','USD','GBP']));
   }, []);
 
-  useEffect(() => {
+  // Sync the editable form fields when the active plan changes. Done during
+  // render (not in an effect) to avoid a cascading re-render.
+  const [prevPlanId, setPrevPlanId] = useState(plan?.id);
+  if (plan?.id !== prevPlanId) {
+    setPrevPlanId(plan?.id);
     setPlanName(plan?.name ?? '');
     setBaseCurrency(plan?.base_currency ?? 'USD');
-  }, [plan?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }
 
   async function savePlan(e: FormEvent) {
     e.preventDefault();

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { plans as plansApi } from '@/api';
 import type { ActivityEntry } from '@/types';
 import { useAuth } from '@/context/AuthContext';
@@ -11,14 +11,17 @@ export function ActivityPage() {
   const [items, setItems] = useState<ActivityEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!planId) return;
     setLoading(true);
-    plansApi.activity(planId, 100).then((rows) => {
-      setItems(rows);
-      setLoading(false);
-    });
+    const rows = await plansApi.activity(planId, 100);
+    setItems(rows);
+    setLoading(false);
   }, [planId]);
+
+  // Deferred to a microtask so state updates run in a callback rather than
+  // synchronously in the effect body (avoids cascading renders).
+  useEffect(() => { Promise.resolve().then(load); }, [load]);
 
   if (loading) return <FullPageSpinner />;
 

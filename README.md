@@ -127,7 +127,7 @@ Open <http://localhost:3002>.
 | Forms | react-hook-form + zod |
 | Icons | lucide-react |
 | Dates | date-fns |
-| Backend | Node 20, Express 5 (ESM) |
+| Backend | Node 26, Express 5 (ESM) |
 | Database | SQLite via `better-sqlite3` (WAL mode) |
 | Auth | bcrypt + express-session + connect-sqlite3 |
 | FX | [frankfurter.app](https://frankfurter.app) (ECB-backed) |

@@ -1,4 +1,4 @@
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { db } from '../db/database.js';
 
 const BCRYPT_ROUNDS = 12;
