@@ -10,6 +10,8 @@ import { FullPageSpinner } from '@/components/Spinner';
 import { BucketIcon } from '@/components/BucketIcon';
 import { InfoTip } from '@/components/InfoTip';
 import { formatCompactCurrency, formatCurrency, formatDate, formatYearMonth, formatPercent } from '@/lib/format';
+import { ChartRangeControl } from '@/components/ChartRangeControl';
+import { applyRange, rangePresetsFor, FULL_RANGE, type ChartRangeValue } from '@/lib/chartRange';
 import { BucketEditor } from '@/components/BucketEditor';
 import { EventEditor } from '@/components/EventEditor';
 import { ScenarioSettings } from '@/components/ScenarioSettings';
@@ -31,6 +33,7 @@ export function ScenarioDetail() {
   const [proj, setProj] = useState<ProjectionResponse | null>(null);
   const [actualsByBucket, setActualsByBucket] = useState<Record<number, Actual[]>>({});
   const [showActuals, setShowActuals] = useState(true);
+  const [range, setRange] = useState<ChartRangeValue>(FULL_RANGE);
   const [hasLoaded, setHasLoaded] = useState(false);
 
   const [bucketEditorOpen, setBucketEditorOpen] = useState(false);
@@ -141,6 +144,10 @@ export function ScenarioDetail() {
   }, [proj, actualsSeries]);
 
   const hasActuals = actualsSeries.size > 0;
+  const rangePresets = rangePresetsFor(chartData.length);
+  const rangeMin = chartData[0]?.date ?? '';
+  const rangeMax = chartData.at(-1)?.date ?? '';
+  const visibleData = applyRange(chartData, range);
 
   // Projected vs actual drift. Anchored on the most recent projection month
   // that has observed actual data, this compares where the plan said we'd be
@@ -315,6 +322,7 @@ export function ScenarioDetail() {
               </p>
             </div>
             <div className="flex items-start gap-3 flex-wrap">
+              <ChartRangeControl presets={rangePresets} value={range} onChange={setRange} minDate={rangeMin} maxDate={rangeMax} />
               {hasActuals && (
                 <label className="inline-flex items-center gap-2 text-xs text-on-surface-variant cursor-pointer">
                   <input
@@ -336,7 +344,7 @@ export function ScenarioDetail() {
           </div>
           <div className="flex-1 min-h-0">
             <ResponsiveContainer>
-              <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+              <ComposedChart data={visibleData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="scenFill" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#c0c1ff" stopOpacity={0.3} />
@@ -366,7 +374,7 @@ export function ScenarioDetail() {
                   <Line type="monotone" dataKey="actual" name="actual" stroke="#4edea3" strokeWidth={2} strokeDasharray="4 3" dot={{ r: 2 }} connectNulls isAnimationActive={false} />
                 )}
                 {events.filter((e) => e.enabled).map((e) => {
-                  const point = proj.projection.aggregate.find((p) => p.date >= e.date);
+                  const point = visibleData.find((p) => p.date >= e.date);
                   if (!point) return null;
                   const color = e.type === 'rate_change' ? '#ffb95f' :
                                 e.type === 'withdrawal' ? '#ffb4ab' :

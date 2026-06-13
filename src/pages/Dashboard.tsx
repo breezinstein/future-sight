@@ -12,6 +12,8 @@ import { StatCard } from '@/components/StatCard';
 import { BucketIcon } from '@/components/BucketIcon';
 import { InfoTip } from '@/components/InfoTip';
 import { formatCompactCurrency, formatCurrency, formatDate, formatYearMonth } from '@/lib/format';
+import { ChartRangeControl } from '@/components/ChartRangeControl';
+import { applyRange, rangePresetsFor, FULL_RANGE, type ChartRangeValue } from '@/lib/chartRange';
 
 // Distinct colours for up to 8 scenarios. After that we cycle.
 const SCENARIO_COLORS = ['#c0c1ff', '#4edea3', '#ffb95f', '#ff8fa3', '#5eead4', '#fda4af', '#bef264', '#fbbf24'];
@@ -27,6 +29,7 @@ export function Dashboard() {
   const [members, setMembers] = useState<PlanMember[]>([]);
   const [bundles, setBundles] = useState<ScenarioBundle[] | null>(null);
   const [enabledIds, setEnabledIds] = useState<Set<number> | null>(null);
+  const [range, setRange] = useState<ChartRangeValue>(FULL_RANGE);
 
   if (state.status !== 'authenticated') throw new Error('unreachable');
   const planId = state.activePlanId;
@@ -181,7 +184,11 @@ export function Dashboard() {
 
   // X-axis tick that shows the current year as a vertical reference.
   const today = new Date().toISOString().slice(0, 10);
-  const todayInRange = overlayData.find((p) => String(p.date) >= today);
+  const rangePresets = rangePresetsFor(overlayData.length);
+  const rangeMin = String(overlayData[0]?.date ?? '');
+  const rangeMax = String(overlayData.at(-1)?.date ?? '');
+  const visibleData = applyRange(overlayData as Array<{ date: string } & Record<string, string | number | null>>, range);
+  const todayInRange = visibleData.find((p) => String(p.date) >= today);
   const enabledCount = enabledBundles.length;
 
   return (
@@ -271,7 +278,8 @@ export function Dashboard() {
               All projections in {baseCurrency}; today marked with a vertical line.
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            <ChartRangeControl presets={rangePresets} value={range} onChange={setRange} minDate={rangeMin} maxDate={rangeMax} />
             {bundles.length >= 2 && (
               <Link to={`/scenarios/compare?ids=${bundles.slice(0, 3).map((b) => b.scenario.id).join(',')}`} className="fs-btn fs-btn-ghost text-xs">
                 <GitCompareArrows size={14} /> Side-by-side
@@ -286,7 +294,7 @@ export function Dashboard() {
             </div>
           ) : (
             <ResponsiveContainer>
-              <LineChart data={overlayData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+              <LineChart data={visibleData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                 <CartesianGrid stroke="#2a2a2a" vertical={false} />
                 <XAxis dataKey="date" tickFormatter={(d) => new Date(d as string).getFullYear().toString()} stroke="#908fa0" fontSize={11} minTickGap={50} />
                 <YAxis tickFormatter={(v) => formatCompactCurrency(v as number, baseCurrency)} stroke="#908fa0" fontSize={11} width={60} />

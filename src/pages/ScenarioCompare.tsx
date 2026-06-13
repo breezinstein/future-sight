@@ -9,6 +9,8 @@ import type { CompareResponse } from '@/types';
 import { useAuth } from '@/context/AuthContext';
 import { FullPageSpinner } from '@/components/Spinner';
 import { formatCompactCurrency, formatCurrency, formatDate } from '@/lib/format';
+import { ChartRangeControl } from '@/components/ChartRangeControl';
+import { applyRange, rangePresetsFor, FULL_RANGE, type ChartRangeValue } from '@/lib/chartRange';
 
 const COLORS = ['#c0c1ff', '#4edea3', '#ffb95f'];
 const HORIZONS = [5, 10, 20];
@@ -25,6 +27,7 @@ export function ScenarioCompare() {
 
   const [data, setData] = useState<CompareResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [range, setRange] = useState<ChartRangeValue>(FULL_RANGE);
 
   const load = useCallback(async () => {
     if (!planId || scenarioIds.length < 2) return;
@@ -60,6 +63,10 @@ export function ScenarioCompare() {
     });
   });
   const chartData = Array.from(dateMap.values()).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const rangePresets = rangePresetsFor(chartData.length);
+  const rangeMin = String(chartData[0]?.date ?? '');
+  const rangeMax = String(chartData.at(-1)?.date ?? '');
+  const visibleData = applyRange(chartData as Array<{ date: string } & Record<string, number | string>>, range);
 
   // Diff vs the first scenario at each horizon.
   const baseline = data.scenarios[0];
@@ -78,10 +85,13 @@ export function ScenarioCompare() {
 
       {/* Overlay chart */}
       <div className="fs-card p-4 h-[460px] flex flex-col">
-        <h2 className="fs-label mb-2">Net worth overlay</h2>
+        <div className="flex justify-between items-center gap-3 mb-2">
+          <h2 className="fs-label">Net worth overlay</h2>
+          <ChartRangeControl presets={rangePresets} value={range} onChange={setRange} minDate={rangeMin} maxDate={rangeMax} />
+        </div>
         <div className="flex-1 min-h-0">
           <ResponsiveContainer>
-            <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+            <LineChart data={visibleData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
               <CartesianGrid stroke="#2a2a2a" vertical={false} />
               <XAxis dataKey="date" tickFormatter={(d) => new Date(d).getFullYear().toString()} stroke="#908fa0" fontSize={11} minTickGap={50} />
               <YAxis tickFormatter={(v) => formatCompactCurrency(v, data.baseCurrency)} stroke="#908fa0" fontSize={11} width={60} />
