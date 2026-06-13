@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import { Menu, X, Eye, LayoutDashboard, LineChart, Wallet, CalendarClock, History, Settings, LogOut } from 'lucide-react';
+import { Menu, X, Eye, LayoutDashboard, LineChart, Wallet, CalendarClock, History, Settings, LogOut, Plus } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
 const NAV = [
@@ -71,6 +71,13 @@ export function MobileTopBar() {
                       <span className="fs-label text-on-surface-variant ml-2 shrink-0">{p.my_role}</span>
                     </button>
                   ))}
+                  <Link
+                    to="/settings/plans/new"
+                    onClick={() => setOpen(false)}
+                    className="w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors"
+                  >
+                    <Plus size={14} /> New plan
+                  </Link>
                 </div>
                 {activePlan && (
                   <div className="border-t border-surface-container-high mt-3" />
