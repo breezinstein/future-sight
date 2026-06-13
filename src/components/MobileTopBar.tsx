@@ -14,8 +14,12 @@ const NAV = [
 ];
 
 export function MobileTopBar() {
-  const { signOut } = useAuth();
+  const { state, signOut, setActivePlan } = useAuth();
   const [open, setOpen] = useState(false);
+
+  const plans = state.status === 'authenticated' ? state.plans : [];
+  const activePlanId = state.status === 'authenticated' ? state.activePlanId : null;
+  const activePlan = plans.find((p) => p.id === activePlanId);
 
   return (
     <>
@@ -48,6 +52,31 @@ export function MobileTopBar() {
                 <X size={20} />
               </button>
             </div>
+            {plans.length > 0 && (
+              <div className="mb-4">
+                <div className="fs-label text-on-surface-variant mb-1.5">Active plan</div>
+                <div className="flex flex-col gap-1">
+                  {plans.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => { setActivePlan(p.id); setOpen(false); }}
+                      className={`w-full text-left px-3 py-2 rounded text-sm flex items-center justify-between transition-colors ${
+                        p.id === activePlanId
+                          ? 'bg-surface-container text-primary'
+                          : 'text-on-surface hover:bg-surface-container'
+                      }`}
+                    >
+                      <span className="truncate">{p.name}</span>
+                      <span className="fs-label text-on-surface-variant ml-2 shrink-0">{p.my_role}</span>
+                    </button>
+                  ))}
+                </div>
+                {activePlan && (
+                  <div className="border-t border-surface-container-high mt-3" />
+                )}
+              </div>
+            )}
             <ul className="flex flex-col gap-1 flex-1">
               {NAV.map(({ to, icon: Icon, label, end }) => (
                 <li key={to}>
