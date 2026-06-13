@@ -135,6 +135,54 @@ export function ScenarioDetail() {
 
   const hasActuals = actualsSeries.size > 0;
 
+  // Projected vs actual drift. Anchored on the most recent projection month
+  // that has observed actual data, this compares where the plan said we'd be
+  // against where we actually are — both in aggregate (base currency) and
+  // per bucket (each in its own currency). Drift = actual − projected, so a
+  // positive value means we are ahead of plan.
+  const drift = useMemo(() => {
+    if (!proj) return null;
+    // Latest projection-month date that carries aggregated actual data.
+    let asOf: string | null = null;
+    for (const p of proj.projection.aggregate) {
+      if (actualsSeries.has(p.date)) asOf = p.date;
+    }
+    if (!asOf) return null;
+
+    const projected = proj.projection.aggregate.find((p) => p.date === asOf)?.balance ?? 0;
+    const actual = actualsSeries.get(asOf) ?? 0;
+    const delta = actual - projected;
+    const pct = projected !== 0 ? delta / projected : 0;
+
+    const perBucket = proj.projection.buckets.map((b) => {
+      const projBal = b.series.find((s) => s.date === asOf)?.balance ?? 0;
+      const list = [...(actualsByBucket[b.bucketId] ?? [])].sort(
+        (a, c) => a.date.localeCompare(c.date),
+      );
+      let latest: Actual | null = null;
+      for (const a of list) {
+        if (a.date <= asOf!) latest = a;
+        else break;
+      }
+      const actualBal = latest ? latest.balance : null;
+      const bucketDelta = actualBal !== null ? actualBal - projBal : null;
+      const bucketPct = actualBal !== null && projBal !== 0 ? bucketDelta! / projBal : null;
+      return {
+        bucketId: b.bucketId,
+        name: b.name,
+        icon: b.icon,
+        currency: b.currency,
+        projected: projBal,
+        actual: actualBal,
+        delta: bucketDelta,
+        pct: bucketPct,
+        asOf: latest?.date ?? null,
+      };
+    });
+
+    return { asOf, projected, actual, delta, pct, perBucket };
+  }, [proj, actualsSeries, actualsByBucket]);
+
   if (!hasLoaded || !scenario || !proj) return <FullPageSpinner />;
 
   async function onDeleteBucket(b: Bucket) {
@@ -372,6 +420,96 @@ export function ScenarioDetail() {
           ))}
         </aside>
 
+        {/* Projected vs actual drift */}
+        {drift && (
+          <div className="fs-card p-4 @4xl:col-span-12 mt-4">
+            <div className="flex justify-between items-start mb-4 gap-3 flex-wrap">
+              <div>
+                <h2 className="fs-label inline-flex items-center">
+                  Projected vs actual
+                  <InfoTip label="projected vs actual">
+                    Compares the plan's projected balance against your recorded actuals as of the
+                    most recent observation. Drift is actual minus projected, so a positive figure
+                    means you are ahead of plan. Per-bucket rows are shown in each bucket's own
+                    currency; the headline is in the plan's base currency.
+                  </InfoTip>
+                </h2>
+                <p className="text-xs text-on-surface-variant mt-1 tabular">
+                  As of {formatDate(drift.asOf)}
+                </p>
+              </div>
+              <DriftBadge delta={drift.delta} pct={drift.pct} />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+              <div className="rounded bg-surface-container/60 p-3">
+                <div className="fs-label text-on-surface-variant">Projected</div>
+                <div className="text-lg text-on-surface tabular mt-0.5">
+                  {formatCurrency(drift.projected, baseCurrency, { maximumFractionDigits: 0 })}
+                </div>
+              </div>
+              <div className="rounded bg-surface-container/60 p-3">
+                <div className="fs-label text-on-surface-variant">Actual</div>
+                <div className="text-lg text-on-surface tabular mt-0.5">
+                  {formatCurrency(drift.actual, baseCurrency, { maximumFractionDigits: 0 })}
+                </div>
+              </div>
+              <div className="rounded bg-surface-container/60 p-3">
+                <div className="fs-label text-on-surface-variant">Drift</div>
+                <div className={`text-lg tabular mt-0.5 ${drift.delta >= 0 ? 'text-secondary' : 'text-error'}`}>
+                  {drift.delta >= 0 ? '+' : '−'}
+                  {formatCurrency(Math.abs(drift.delta), baseCurrency, { maximumFractionDigits: 0 })}
+                  <span className="text-xs ml-1">({drift.delta >= 0 ? '+' : '−'}{formatPercent(Math.abs(drift.pct))})</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-on-surface-variant border-b border-surface-container-high">
+                    <th className="py-2 pr-3 fs-label">Bucket</th>
+                    <th className="py-2 pr-3 fs-label text-right">Projected</th>
+                    <th className="py-2 pr-3 fs-label text-right">Actual</th>
+                    <th className="py-2 pr-3 fs-label text-right">Drift</th>
+                    <th className="py-2 fs-label text-right">Drift %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {drift.perBucket.map((b) => (
+                    <tr key={b.bucketId} className="border-b border-surface-container/50">
+                      <td className="py-2 pr-3">
+                        <span className="inline-flex items-center gap-2 text-on-surface">
+                          <span className="text-primary"><BucketIcon name={b.icon} /></span>
+                          <span className="truncate">{b.name}</span>
+                        </span>
+                      </td>
+                      <td className="py-2 pr-3 tabular text-on-surface-variant text-right">
+                        {formatCurrency(b.projected, b.currency, { maximumFractionDigits: 0 })}
+                      </td>
+                      <td className="py-2 pr-3 tabular text-on-surface text-right">
+                        {b.actual !== null
+                          ? formatCurrency(b.actual, b.currency, { maximumFractionDigits: 0 })
+                          : <span className="text-on-surface-variant">No actual</span>}
+                      </td>
+                      <td className={`py-2 pr-3 tabular text-right ${b.delta === null ? 'text-on-surface-variant' : b.delta >= 0 ? 'text-secondary' : 'text-error'}`}>
+                        {b.delta === null
+                          ? '—'
+                          : `${b.delta >= 0 ? '+' : '−'}${formatCurrency(Math.abs(b.delta), b.currency, { maximumFractionDigits: 0 })}`}
+                      </td>
+                      <td className={`py-2 tabular text-right ${b.pct === null ? 'text-on-surface-variant' : b.pct >= 0 ? 'text-secondary' : 'text-error'}`}>
+                        {b.pct === null
+                          ? '—'
+                          : `${b.pct >= 0 ? '+' : '−'}${formatPercent(Math.abs(b.pct))}`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {/* Events timeline */}
         <div className="fs-card p-4 @4xl:col-span-12 mt-4">
           <div className="flex justify-between items-center mb-3">
@@ -504,9 +642,22 @@ export function ScenarioDetail() {
   );
 }
 
+function DriftBadge({ delta, pct }: { delta: number; pct: number }) {
+  // Within ±1% of plan reads as "on track"; beyond that we surface the
+  // direction so a user can tell at a glance whether to adjust contributions.
+  const onTrack = Math.abs(pct) <= 0.01;
+  const ahead = delta >= 0;
+  const cls = onTrack
+    ? 'bg-surface-container-high text-on-surface-variant'
+    : ahead
+      ? 'bg-secondary/15 text-secondary'
+      : 'bg-error/15 text-error';
+  const label = onTrack ? 'On track' : ahead ? 'Ahead of plan' : 'Behind plan';
+  return <span className={`text-xs px-2 py-1 rounded font-medium ${cls}`}>{label}</span>;
+}
+
 function EventBadge({ type }: { type: PlanEvent['type'] | string }) {
-  const map: Record<string, { label: string; cls: string }> = {
-    deposit: { label: 'Deposit', cls: 'bg-secondary/15 text-secondary' },
+  const map: Record<string, { label: string; cls: string }> = {    deposit: { label: 'Deposit', cls: 'bg-secondary/15 text-secondary' },
     withdrawal: { label: 'Withdrawal', cls: 'bg-error/15 text-error' },
     rate_change: { label: 'Rate change', cls: 'bg-tertiary/15 text-tertiary' },
     // Deprecated — kept for read-only display of any straggler legacy rows.
